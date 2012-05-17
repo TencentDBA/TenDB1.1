@@ -439,9 +439,9 @@ buf_flush_ready_for_replace(
 
 	if (UNIV_LIKELY(buf_page_in_file(bpage))) {
 
-		return(bpage->oldest_modification == 0
-		       && buf_page_get_io_fix(bpage) == BUF_IO_NONE
-		       && bpage->buf_fix_count == 0);
+		return(bpage->oldest_modification == 0                          /* 非脏页 */
+		       && buf_page_get_io_fix(bpage) == BUF_IO_NONE             /* 非正在读写或pin状态 */
+		       && bpage->buf_fix_count == 0);                           /* 不被任何mtr占有（mtr已commit) */
 	}
 
 	ut_print_timestamp(stderr);
@@ -474,15 +474,15 @@ buf_flush_ready_for_flush(
 	ut_ad(mutex_own(buf_page_get_mutex(bpage)));
 	ut_ad(flush_type == BUF_FLUSH_LRU || BUF_FLUSH_LIST);
 
-	if (bpage->oldest_modification != 0
-	    && buf_page_get_io_fix(bpage) == BUF_IO_NONE) {
+	if (bpage->oldest_modification != 0                                     /* 脏页 */
+	    && buf_page_get_io_fix(bpage) == BUF_IO_NONE) {                     /* 读写已结束 */
 		ut_ad(bpage->in_flush_list);
 
 		if (flush_type != BUF_FLUSH_LRU) {
 
 			return(TRUE);
 
-		} else if (bpage->buf_fix_count == 0) {
+		} else if (bpage->buf_fix_count == 0) {                             /* FLUSH_LRU必须不被任何mtr占有（mtr已commit) */
 
 			/* If we are flushing the LRU list, to avoid deadlocks
 			we require the block not to be bufferfixed, and hence
@@ -725,7 +725,7 @@ buf_flush_buffered_writes(void)
 		return;
 	}
 
-	for (i = 0; i < trx_doublewrite->first_free; i++) {
+	for (i = 0; i < trx_doublewrite->first_free; i++) {                             /* 页面校验 */
 
 		const buf_block_t*	block;
 
@@ -786,16 +786,16 @@ corrupted_page:
 	srv_dblwr_writes++;
 
 	len = ut_min(TRX_SYS_DOUBLEWRITE_BLOCK_SIZE,
-		     trx_doublewrite->first_free) * UNIV_PAGE_SIZE;
+		     trx_doublewrite->first_free) * UNIV_PAGE_SIZE;             /* 一次最多写一个簇大小，因为dw有两个簇，只有簇内才是连续的 */
 
 	write_buf = trx_doublewrite->write_buf;
 	i = 0;
 
-	fil_io(OS_FILE_WRITE, TRUE, TRX_SYS_SPACE, 0,
+	fil_io(OS_FILE_WRITE, TRUE, TRX_SYS_SPACE, 0,                       /* 同步写dw（第一个簇） */
 	       trx_doublewrite->block1, 0, len,
 	       (void*) write_buf, NULL);
 
-	for (len2 = 0; len2 + UNIV_PAGE_SIZE <= len;
+	for (len2 = 0; len2 + UNIV_PAGE_SIZE <= len;                        /* 比较dw_buf中页面的lsn是否匹配 */
 	     len2 += UNIV_PAGE_SIZE, i++) {
 		const buf_block_t* block = (buf_block_t*)
 			trx_doublewrite->buf_block_arr[i];
@@ -828,11 +828,11 @@ corrupted_page:
 		+ TRX_SYS_DOUBLEWRITE_BLOCK_SIZE * UNIV_PAGE_SIZE;
 	ut_ad(i == TRX_SYS_DOUBLEWRITE_BLOCK_SIZE);
 
-	fil_io(OS_FILE_WRITE, TRUE, TRX_SYS_SPACE, 0,
+	fil_io(OS_FILE_WRITE, TRUE, TRX_SYS_SPACE, 0,                        /* 同步写dw（第二个簇） */
 	       trx_doublewrite->block2, 0, len,
 	       (void*) write_buf, NULL);
 
-	for (len2 = 0; len2 + UNIV_PAGE_SIZE <= len;
+	for (len2 = 0; len2 + UNIV_PAGE_SIZE <= len;                        /* 比较dw_buf中页面的lsn是否匹配 */
 	     len2 += UNIV_PAGE_SIZE, i++) {
 		const buf_block_t* block = (buf_block_t*)
 			trx_doublewrite->buf_block_arr[i];
@@ -858,13 +858,13 @@ corrupted_page:
 flush:
 	/* Now flush the doublewrite buffer data to disk */
 
-	fil_flush(TRX_SYS_SPACE);
+	fil_flush(TRX_SYS_SPACE);                                           /* 共享表空间真正刷到磁盘 */
 
 	/* We know that the writes have been flushed to disk now
 	and in recovery we will find them in the doublewrite buffer
 	blocks. Next do the writes to the intended positions. */
 
-	for (i = 0; i < trx_doublewrite->first_free; i++) {
+	for (i = 0; i < trx_doublewrite->first_free; i++) {                 /* dw_buf的脏页执行异步IO */
 		const buf_block_t* block = (buf_block_t*)
 			trx_doublewrite->buf_block_arr[i];
 
@@ -1889,7 +1889,7 @@ buf_flush_LRU(
 {
 	ulint		page_count;
 
-	if (!buf_flush_start(buf_pool, BUF_FLUSH_LRU)) {
+	if (!buf_flush_start(buf_pool, BUF_FLUSH_LRU)) {                            /* flush LRU 已经开始 */
 		return(ULINT_UNDEFINED);
 	}
 
@@ -1941,7 +1941,7 @@ buf_flush_list(
 
 		buf_pool = buf_pool_from_array(i);
 
-		if (!buf_flush_start(buf_pool, BUF_FLUSH_LIST)) {
+		if (!buf_flush_start(buf_pool, BUF_FLUSH_LIST)) {           /* 如果有其他线程正在执行buf_flush_list，则跳过 */
 			/* We have two choices here. If lsn_limit was
 			specified then skipping an instance of buffer
 			pool means we cannot guarantee that all pages

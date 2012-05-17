@@ -1299,7 +1299,7 @@ fsp_fill_free_list(
 	ut_a(!zip_size || zip_size >= PAGE_ZIP_MIN_SIZE);
 
 	if (space == 0 && srv_auto_extend_last_data_file
-	    && size < limit + FSP_EXTENT_SIZE * FSP_FREE_ADD) {
+	    && size < limit + FSP_EXTENT_SIZE * FSP_FREE_ADD) {                             /* 如果是共享表空间需要增长空间，并且自动增长空间，则extend */
 
 		/* Try to increase the last data file size */
 		fsp_try_extend_data_file(&actual_increase, space, header, mtr);
@@ -1319,14 +1319,14 @@ fsp_fill_free_list(
 	while ((init_space && i < 1)
 	       || ((i + FSP_EXTENT_SIZE <= size) && (count < FSP_FREE_ADD))) {
 
-		ibool	init_xdes;
-		if (zip_size) {
+		ibool	init_xdes;                                                          /* 判断是否簇描述页 */
+		if (zip_size) {                                                             
 			init_xdes = ut_2pow_remainder(i, zip_size) == 0;
 		} else {
 			init_xdes = ut_2pow_remainder(i, UNIV_PAGE_SIZE) == 0;
 		}
 
-		mlog_write_ulint(header + FSP_FREE_LIMIT, i + FSP_EXTENT_SIZE,
+		mlog_write_ulint(header + FSP_FREE_LIMIT, i + FSP_EXTENT_SIZE,              /* FSP_FREE_LIMIT推进一个簇的大小 */
 				 MLOG_4BYTES, mtr);
 
 		/* Update the free limit info in the log system and make
@@ -1338,7 +1338,7 @@ fsp_fill_free_list(
 				/ ((1024 * 1024) / UNIV_PAGE_SIZE));
 		}
 
-		if (UNIV_UNLIKELY(init_xdes)) {
+		if (UNIV_UNLIKELY(init_xdes)) {                                             /* 如果是簇描述页，则初始化簇描述页和ibuf描述页 */
 
 			buf_block_t*	block;
 
@@ -1383,7 +1383,7 @@ fsp_fill_free_list(
 			mtr_commit(&ibuf_mtr);
 		}
 
-		descr = xdes_get_descriptor_with_space_hdr(header, space, i,
+		descr = xdes_get_descriptor_with_space_hdr(header, space, i,            /* 初始化簇描述符，并加入到相应列表 */
 							   mtr);
 		xdes_init(descr, mtr);
 
@@ -2292,7 +2292,7 @@ fseg_create_general(
 
 	space_header = fsp_get_space_header(space, zip_size, mtr);
 
-	inode = fsp_alloc_seg_inode(space_header, mtr);
+	inode = fsp_alloc_seg_inode(space_header, mtr);                             /* 分配一个inode项 */
 
 	if (inode == NULL) {
 
@@ -2320,7 +2320,7 @@ fseg_create_general(
 	}
 
 	if (page == 0) {
-		block = fseg_alloc_free_page_low(space, zip_size,
+		block = fseg_alloc_free_page_low(space, zip_size,						/* 对于b树来说，这就是根页！ */
 						 inode, 0, FSP_UP, mtr, mtr);
 
 		if (block == NULL) {
@@ -2338,7 +2338,7 @@ fseg_create_general(
 	}
 
 	mlog_write_ulint(header + FSEG_HDR_OFFSET,
-			 page_offset(inode), MLOG_2BYTES, mtr);
+			 page_offset(inode), MLOG_2BYTES, mtr);                             /* 填写（根页等）段头inode信息 */
 
 	mlog_write_ulint(header + FSEG_HDR_PAGE_NO,
 			 page_get_page_no(page_align(inode)),

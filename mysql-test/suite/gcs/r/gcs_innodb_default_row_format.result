@@ -1,0 +1,27 @@
+SET @start_global_value = @@global.innodb_default_row_format;
+SELECT @start_global_value;
+@start_global_value
+GCS
+show variables like 'innodb_default_row_format';
+Variable_name	Value
+innodb_default_row_format	GCS
+set innodb_default_row_format=cc;
+ERROR HY000: Variable 'innodb_default_row_format' is a GLOBAL variable and should be set with SET GLOBAL
+set global innodb_default_row_format=cc;
+ERROR 42000: Variable 'innodb_default_row_format' can't be set to the value of 'cc'
+create table t_gcs_default(c1 int, c2 varchar(200));
+insert into t_gcs_default values(1,1);
+alter table t_gcs_default add column d1 int not null;
+set global innodb_default_row_format=compact;
+show variables like 'innodb_default_row_format';
+Variable_name	Value
+innodb_default_row_format	Compact
+create table t_compact_default(c1 int, c2 varchar(200));
+insert into t_compact_default values(1,1);
+alter table t_compact_default add column d1 int not null;
+SET @@global.innodb_default_row_format = @start_global_value;
+SELECT @@global.innodb_default_row_format;
+@@global.innodb_default_row_format
+GCS
+drop table t_compact_default;
+drop table t_gcs_default;

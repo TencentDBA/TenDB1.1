@@ -2252,6 +2252,7 @@ loop:
 		/* Try to parse a log record, fetching its type, space id,
 		page no, and a pointer to the body of the log record */
 
+        /* 分析日志记录，得到type,space,page_no以及body，并得到整个日志的长度 */
 		len = recv_parse_log_rec(ptr, end_ptr, &type, &space,
 					 &page_no, &body);
 
@@ -2265,6 +2266,7 @@ loop:
 			return(FALSE);
 		}
 
+        /* 根据日志记录长度得到新的lsn值，lsn值是根据可以根据日志记录位置得到 */
 		new_recovered_lsn = recv_calc_lsn_on_data_add(old_lsn, len);
 
 		if (new_recovered_lsn > recv_sys->scanned_lsn) {
@@ -2676,7 +2678,7 @@ recv_scan_log_recs(
 		}
 
 		scanned_lsn += data_len;
-
+        /* 判断是否需要重做buf中的日志 */
 		if (scanned_lsn > recv_sys->scanned_lsn) {
 
 			/* We have found more entries. If this scan is

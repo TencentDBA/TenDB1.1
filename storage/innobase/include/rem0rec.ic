@@ -27,6 +27,7 @@ Created 5/30/1994 Heikki Tuuri
 #include "ut0byte.h"
 #include "dict0dict.h"
 #include "btr0types.h"
+#include "page0page.h"
 
 /* Compact flag ORed to the extra size returned by rec_get_offsets() */
 #define REC_OFFS_COMPACT	((ulint) 1 << 31)
@@ -34,8 +35,10 @@ Created 5/30/1994 Heikki Tuuri
 #define REC_OFFS_SQL_NULL	((ulint) 1 << 31)
 /* External flag in offsets returned by rec_get_offsets() */
 #define REC_OFFS_EXTERNAL	((ulint) 1 << 30)
+/* Default flag in offsets returned by rec_get_offsets() */
+#define REC_OFFS_DEFAULT	((ulint) 1 << 29)
 /* Mask for offsets returned by rec_get_offsets() */
-#define REC_OFFS_MASK		(REC_OFFS_EXTERNAL - 1)
+#define REC_OFFS_MASK		(REC_OFFS_DEFAULT - 1)
 
 /* Offsets of the bit-fields in an old-style record. NOTE! In the table the
 most significant bytes and bits are written below less significant.
@@ -747,6 +750,46 @@ rec_set_deleted_flag_new(
 }
 
 /******************************************************//**
+set gcs flag */
+UNIV_INLINE
+void
+rec_set_gcs_flag(
+/*=====================*/
+	rec_t*		rec,	/*!< in/out: new-style physical record */
+	ulint		flag)	/*!< in: nonzero if gcs marked */
+{
+	ulint	val;
+
+	val = rec_get_info_bits(rec, TRUE);
+
+	if (flag) {
+		val |= REC_INFO_GCS_FLAG;
+	} else {
+		val &= ~REC_INFO_GCS_FLAG;
+	}
+
+	rec_set_info_bits_new(rec, val);
+}
+
+/******************************************************//**
+@return	TRUE if gcs record type */
+UNIV_INLINE
+ibool
+rec_is_gcs(
+/*=====================*/
+	const rec_t*	rec)	/*!< in: new-style physical record */
+{
+	ulint	val;
+
+//     ut_ad(page_rec_is_comp(rec) && 
+//         (page_rec_is_user_rec(rec) || page_rec_is_supremum(rec) || page_rec_is_infimum(rec)));  // rec可能只是一个内存，非业内地址
+
+	val = rec_get_info_bits(rec, TRUE);
+
+	return (val & REC_INFO_GCS_FLAG) != 0;
+}
+
+/******************************************************//**
 The following function tells if a new-style record is a node pointer.
 @return	TRUE if node pointer */
 UNIV_INLINE
@@ -1033,8 +1076,7 @@ rec_get_nth_field_offs(
 /*===================*/
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
 	ulint		n,	/*!< in: index of the field */
-	ulint*		len)	/*!< out: length of the field; UNIV_SQL_NULL
-				if SQL null */
+	ulint*		len)	/*!< out: length of the field; UNIV_SQL_NULL if SQL null; UNIV_SQL_DEFAULT if default value */
 {
 	ulint	offs;
 	ulint	length;
@@ -1051,7 +1093,10 @@ rec_get_nth_field_offs(
 
 	if (length & REC_OFFS_SQL_NULL) {
 		length = UNIV_SQL_NULL;
-	} else {
+	} 
+    else if (length & REC_OFFS_DEFAULT) {
+		length = UNIV_SQL_DEFAULT;
+	}else {
 		length &= REC_OFFS_MASK;
 		length -= offs;
 	}
@@ -1086,6 +1131,20 @@ rec_offs_any_extern(
 {
 	ut_ad(rec_offs_validate(NULL, NULL, offsets));
 	return(UNIV_UNLIKELY(*rec_offs_base(offsets) & REC_OFFS_EXTERNAL));
+}
+
+/******************************************************//**
+Determine if the offsets are for a record containing
+default value stored columns.
+@return	nonzero if default value stored */
+UNIV_INLINE
+ulint
+rec_offs_any_default(
+/*================*/
+	const ulint*	offsets)/*!< in: array returned by rec_get_offsets() */
+{
+	ut_ad(rec_offs_validate(NULL, NULL, offsets));
+	return(UNIV_UNLIKELY(*rec_offs_base(offsets) & REC_OFFS_DEFAULT));
 }
 
 #ifdef UNIV_BLOB_NULL_DEBUG
@@ -1140,6 +1199,22 @@ rec_offs_nth_extern(
 	ut_ad(n < rec_offs_n_fields(offsets));
 	return(UNIV_UNLIKELY(rec_offs_base(offsets)[1 + n]
 			     & REC_OFFS_EXTERNAL));
+}
+
+/******************************************************//**
+Returns nonzero if the default bit is set in nth field of rec.
+@return	nonzero if default bit is set */
+UNIV_INLINE
+ulint
+rec_offs_nth_default(
+/*================*/
+	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
+	ulint		n)	/*!< in: nth field */
+{
+	ut_ad(rec_offs_validate(NULL, NULL, offsets));
+	ut_ad(n < rec_offs_n_fields(offsets));
+	return(UNIV_UNLIKELY(rec_offs_base(offsets)[1 + n]
+			     & REC_OFFS_DEFAULT));
 }
 
 /******************************************************//**
@@ -1386,7 +1461,7 @@ rec_set_nth_field(
 	ulint		n,	/*!< in: index number of the field */
 	const void*	data,	/*!< in: pointer to the data
 				if not SQL null */
-	ulint		len)	/*!< in: length of the data or UNIV_SQL_NULL */
+	ulint		len)	/*!< in: length of the data or UNIV_SQL_NULL, impossiable UNIV_SQL_DEFAULT */
 {
 	byte*	data2;
 	ulint	len2;
@@ -1409,6 +1484,7 @@ rec_set_nth_field(
 		rec_set_nth_field_null_bit(rec, n, FALSE);
 		ut_ad(len == rec_get_nth_field_size(rec, n));
 	} else {
+        ut_ad(len != UNIV_SQL_DEFAULT);
 		ut_ad(len2 == len);
 	}
 
@@ -1484,7 +1560,7 @@ rec_offs_extra_size(
 {
 	ulint	size;
 	ut_ad(rec_offs_validate(NULL, NULL, offsets));
-	size = *rec_offs_base(offsets) & ~(REC_OFFS_COMPACT | REC_OFFS_EXTERNAL);
+	size = *rec_offs_base(offsets) & ~(REC_OFFS_COMPACT | REC_OFFS_EXTERNAL | REC_OFFS_DEFAULT);
 	ut_ad(size < UNIV_PAGE_SIZE);
 	return(size);
 }
@@ -1499,6 +1575,79 @@ rec_offs_size(
 	const ulint*	offsets)/*!< in: array returned by rec_get_offsets() */
 {
 	return(rec_offs_data_size(offsets) + rec_offs_extra_size(offsets));
+}
+
+/**********************************************************//**
+Returns field count of gcs record
+@return	size */
+UNIV_INLINE
+ulint
+rec_gcs_get_field_count(
+/*==========*/
+    const rec_t*    rec,                /*!< in: the record ptr */
+    ulint*	        field_count_len)    /*!< out: occupy size of field count */
+{
+    byte*           ptr;
+    ulint           ret;    
+    ut_ad(rec_is_gcs(rec));
+
+    ptr = (byte*)rec - (REC_N_NEW_EXTRA_BYTES + 1);
+
+    if ((*ptr & 0x80) == 0)                     /*最高bit是0，一个字节*/
+    {
+        if (field_count_len != NULL)
+        {
+            *field_count_len = 1;
+        }
+        
+        ret = *ptr;
+        ut_ad(ret < 0x80);
+
+        return ret;
+    }
+
+    if (field_count_len != NULL)
+    {
+        *field_count_len = 2;
+    }
+
+    ret = ((*ptr-- & 0x7F) << 8);
+    ret |= *ptr;
+    ut_ad(ret < 1500 && ret > 0x7F);
+
+    return ret;
+    
+}
+/**********************************************************//**
+Set field count of gcs record
+@return	the occupy size of field count */
+UNIV_INLINE
+ulint
+rec_gcs_set_field_count(
+/*==========*/
+    rec_t*          rec,                /*!< in: the record ptr */
+    const ulint     n_fields)           /*!< in: field count of gcs record */
+{
+    byte*            ptr;
+
+    ut_ad(rec_is_gcs(rec));
+
+    if (n_fields < 0x80)
+    {
+        ptr = rec - (REC_N_NEW_EXTRA_BYTES + 1);
+        *ptr = (byte)(n_fields & 0x7F);
+        return 1;
+    }
+
+    ut_ad(n_fields < 1500);
+
+    ptr = rec - (REC_N_NEW_EXTRA_BYTES + 2);
+    *ptr++ = (byte)(n_fields & 0xFF);	/** 低字节（低位） */
+    *ptr = (byte)(n_fields >> 8);		/** 高字节（高位）*/
+    ut_ad((*ptr & 0x80) == 0);
+    *ptr |= 0x80;						/* 高字节高bit置1 */
+
+    return 2;
 }
 
 #ifdef UNIV_DEBUG
@@ -1608,7 +1757,7 @@ rec_get_converted_size(
 						   dtuple_get_info_bits(dtuple)
 						   & REC_NEW_STATUS_MASK,
 						   dtuple->fields,
-						   dtuple->n_fields, NULL));
+						   dtuple->n_fields, TRUE, NULL));
 	}
 
 	data_size = dtuple_get_data_size(dtuple, 0);
@@ -1635,14 +1784,16 @@ rec_fold(
 					fields to fold */
 	ulint		n_bytes,	/*!< in: number of bytes to fold
 					in an incomplete last field */
-	index_id_t	tree_id)	/*!< in: index tree id */
+	const dict_index_t*   index)	/*!< in: index */
 {
 	ulint		i;
 	const byte*	data;
 	ulint		len;
 	ulint		fold;
 	ulint		n_fields_rec;
+    index_id_t	tree_id;
 
+    ut_a(index);
 	ut_ad(rec_offs_validate(rec, NULL, offsets));
 	ut_ad(rec_validate(rec, offsets));
 	ut_ad(n_fields + n_bytes > 0);
@@ -1659,10 +1810,14 @@ rec_fold(
 		n_bytes = 0;
 	}
 
+    tree_id = index->id;
+
 	fold = ut_fold_ull(tree_id);
 
 	for (i = 0; i < n_fields; i++) {
 		data = rec_get_nth_field(rec, offsets, i, &len);
+        if (len == UNIV_SQL_DEFAULT)
+            data = dict_index_get_nth_col_def(index, i, &len);
 
 		if (len != UNIV_SQL_NULL) {
 			fold = ut_fold_ulint_pair(fold,
@@ -1672,6 +1827,8 @@ rec_fold(
 
 	if (n_bytes > 0) {
 		data = rec_get_nth_field(rec, offsets, i, &len);
+        if (len == UNIV_SQL_DEFAULT)
+            data = dict_index_get_nth_col_def(index, i, &len);
 
 		if (len != UNIV_SQL_NULL) {
 			if (len > n_bytes) {

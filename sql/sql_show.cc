@@ -4074,6 +4074,9 @@ static int get_schema_tables_record(THD *thd, TABLE_LIST *tables,
       case ROW_TYPE_COMPACT:
         tmp_buff= "Compact";
         break;
+      case ROW_TYPE_GCS: /* added for gcs row_format */
+        tmp_buff= file->get_row_type_str_for_gcs();
+        break;
       case ROW_TYPE_PAGE:
         tmp_buff= "Paged";
         break;

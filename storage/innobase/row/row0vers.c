@@ -410,7 +410,7 @@ row_vers_old_has_index_entry(
 		the clustered index record has already been updated to
 		a different binary value in a char field, but the
 		collation identifies the old and new value anyway! */
-		if (entry && !dtuple_coll_cmp(ientry, entry)) {
+		if (entry && !dtuple_coll_cmp(ientry, entry)) {                 /* 为什么会没打删除标记 */
 
 			mem_heap_free(heap);
 

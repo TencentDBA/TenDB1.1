@@ -200,6 +200,7 @@ page_cur_rec_field_extends(
 /*=======================*/
 	const dtuple_t*	tuple,	/*!< in: data tuple */
 	const rec_t*	rec,	/*!< in: record */
+    const dict_index_t*     index,  /*!< in:index  */
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
 	ulint		n)	/*!< in: compare nth field */
 {
@@ -214,6 +215,8 @@ page_cur_rec_field_extends(
 	type = dfield_get_type(dfield);
 
 	rec_f = rec_get_nth_field(rec, offsets, n, &rec_f_len);
+    if (rec_f_len == UNIV_SQL_DEFAULT)
+        rec_f = dict_index_get_nth_col_def(index, n, &rec_f_len);
 
 	if (type->mtype == DATA_VARCHAR
 	    || type->mtype == DATA_CHAR
@@ -390,7 +393,7 @@ low_slot_match:
 #ifdef PAGE_CUR_LE_OR_EXTENDS
 			if (mode == PAGE_CUR_LE_OR_EXTENDS
 			    && page_cur_rec_field_extends(
-				    tuple, mid_rec, offsets,
+				    tuple, mid_rec, index, offsets,
 				    cur_matched_fields)) {
 
 				goto low_slot_match;
@@ -447,7 +450,7 @@ low_rec_match:
 #ifdef PAGE_CUR_LE_OR_EXTENDS
 			if (mode == PAGE_CUR_LE_OR_EXTENDS
 			    && page_cur_rec_field_extends(
-				    tuple, mid_rec, offsets,
+				    tuple, mid_rec, index, offsets,
 				    cur_matched_fields)) {
 
 				goto low_rec_match;
@@ -626,7 +629,7 @@ page_cur_insert_rec_write_log(
 		const byte*	cur_ptr = cursor_rec - cur_extra_size;
 
 		/* Find out the first byte in insert_rec which differs from
-		cursor_rec; skip the bytes in the record info */
+		cursor_rec; skip the bytes in the record info */        /* 从记录头开始，逐字节比较与cursor_rec的第一个不同字节索引，除record fixed extra info外 */
 
 		do {
 			if (*ins_ptr == *cur_ptr) {
@@ -708,7 +711,7 @@ need_extra_info:
 		/* Write the record end segment length
 		and the extra info storage flag */
 		log_ptr += mach_write_compressed(log_ptr,
-						 2 * (rec_size - i) + 1);
+						 2 * (rec_size - i) + 1);           /* 加1是为了与else分支区分，一个是奇数，一个是偶数！！*/
 
 		/* Write the info bits */
 		mach_write_to_1(log_ptr,
@@ -728,7 +731,7 @@ need_extra_info:
 	} else {
 		/* Write the record end segment length
 		and the extra info storage flag */
-		log_ptr += mach_write_compressed(log_ptr, 2 * (rec_size - i));
+		log_ptr += mach_write_compressed(log_ptr, 2 * (rec_size - i));  /* 记录头和总记录长度都相等 */
 	}
 
 	/* Write to the log the inserted index record end segment which
@@ -818,7 +821,7 @@ page_cur_parse_insert_rec(
 		return(NULL);
 	}
 
-	if (end_seg_len & 0x1UL) {
+	if (end_seg_len & 0x1UL) {                      /* 若为奇数！ */
 		/* Read the info bits */
 
 		if (end_ptr < ptr + 1) {
@@ -911,6 +914,12 @@ page_cur_parse_insert_rec(
 	if (page_is_comp(page)) {
 		rec_set_info_and_status_bits(buf + origin_offset,
 				     info_and_status_bits);
+
+        /* 增加断言 */
+        ut_ad (!rec_is_gcs(buf + origin_offset) ||
+                (dict_index_is_gcs_clust_after_alter_table(index)  && 
+                    (rec_gcs_get_field_count(buf + origin_offset, NULL) == dict_index_get_n_fields(index) ||    /* 要不一致，要不正在恢复。 */
+                        recv_recovery_is_on())));               /* 恢复过程不一致很可能是MLOG_COMP_LIST_END_COPY_CREATED造成的 */
 	} else {
 		rec_set_info_bits_old(buf + origin_offset,
 							info_and_status_bits);

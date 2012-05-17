@@ -211,7 +211,13 @@ row_sel_sec_rec_is_for_clust_rec(
 
 		clust_field = rec_get_nth_field(
 			clust_rec, clust_offs, clust_pos, &clust_len);
+
+        /* 必须保证字典的内容与默认值插入记录的内容一致 */
+        if (clust_len == UNIV_SQL_DEFAULT )
+            clust_field = dict_index_get_nth_col_def(clust_index, clust_pos, &clust_len);
+
 		sec_field = rec_get_nth_field(sec_rec, sec_offs, i, &sec_len);
+        ut_a( sec_len != UNIV_SQL_DEFAULT);
 
 		len = clust_len;
 
@@ -241,6 +247,7 @@ row_sel_sec_rec_is_for_clust_rec(
 			}
 		}
 
+        /* 如果二级索引是前缀索引，只比较前缀索引长度 */
 		if (0 != cmp_data_data(col->mtype, col->prtype,
 				       clust_field, len,
 				       sec_field, sec_len)) {
@@ -462,6 +469,9 @@ row_sel_fetch_columns(
 			} else {
 				data = rec_get_nth_field(rec, offsets,
 							 field_no, &len);
+
+                if (len == UNIV_SQL_DEFAULT)
+                    data = dict_index_get_nth_col_def(index, field_no, &len);
 
 				needs_copy = column->copy_val;
 			}
@@ -2556,7 +2566,7 @@ row_sel_field_store_in_mysql_format(
 {
 	byte*	ptr;
 
-	ut_ad(len != UNIV_SQL_NULL);
+	ut_ad(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 	UNIV_MEM_ASSERT_RW(data, len);
 	UNIV_MEM_ASSERT_W(dest, templ->mysql_col_len);
 	UNIV_MEM_INVALID(dest, templ->mysql_col_len);
@@ -2783,6 +2793,16 @@ row_sel_store_mysql_rec(
 			/* Field is stored in the row. */
 
 			data = rec_get_nth_field(rec, offsets, field_no, &len);
+
+            if (len == UNIV_SQL_DEFAULT)
+            {
+                dict_index_t*       real_index = prebuilt->index;
+                ut_ad(rec_clust || dict_index_is_clust(real_index));
+                /* 只有聚集索引才有默认值 */
+                real_index = dict_table_get_first_index(real_index->table); 
+
+                data = dict_index_get_nth_col_def(real_index, field_no, &len);
+            }
 
 			if (UNIV_UNLIKELY(templ->type == DATA_BLOB)
 			    && len != UNIV_SQL_NULL) {
@@ -4843,7 +4863,8 @@ row_search_autoinc_read_column(
 
 	data = rec_get_nth_field(rec, offsets, col_no, &len);
 
-	ut_a(len != UNIV_SQL_NULL);
+    /* 自增列不可能含默认值 */
+	ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 
 	switch (mtype) {
 	case DATA_INT:

@@ -89,8 +89,19 @@ dict_create_sys_tables_tuple(
 #endif
 
 	ptr = mem_heap_alloc(heap, 4);
-	mach_write_to_4(ptr, table->n_def
-			| ((table->flags & DICT_TF_COMPACT) << 31));
+    if (dict_table_is_gcs(table))                       /* 表定义修改 */
+    {
+        ut_ad(dict_table_is_comp(table));
+
+        mach_write_to_4(ptr, table->n_def
+            | (1 << 31) | (1 << 30));
+    }
+    else 
+    {
+        mach_write_to_4(ptr, table->n_def
+            | ((table->flags & DICT_TF_COMPACT) << 31));
+    }
+
 	dfield_set_data(dfield, ptr, 4);
 	/* 5: TYPE -----------------------------*/
 	dfield = dtuple_get_nth_field(entry, 3/*TYPE*/);
@@ -119,8 +130,17 @@ dict_create_sys_tables_tuple(
 	dfield = dtuple_get_nth_field(entry, 5/*MIX_LEN*/);
 
 	ptr = mem_heap_alloc(heap, 4);
-	mach_write_to_4(ptr, table->flags >> DICT_TF2_SHIFT);
 
+    if (dict_table_is_gcs_after_alter_table(table))
+    {
+        //innodb_create_use_gcs_real_format
+        mach_write_to_4(ptr, (table->flags >> DICT_TF2_SHIFT) | ((table->n_cols_before_alter_table - DATA_N_SYS_COLS) << 16));
+    }
+    else
+    {
+        mach_write_to_4(ptr, table->flags >> DICT_TF2_SHIFT);
+    }
+   
 	dfield_set_data(dfield, ptr, 4);
 	/* 8: CLUSTER_NAME ---------------------*/
 	dfield = dtuple_get_nth_field(entry, 6/*CLUSTER_NAME*/);
@@ -1524,4 +1544,120 @@ dict_create_add_foreigns_to_dictionary(
 	}
 
 	return(DB_SUCCESS);
+}
+
+
+
+
+/****************************************************************//**
+Creates the sys_added_cols_default table inside InnoDB
+at database creation or database start if they are not found or are
+not of the right form.
+@return	DB_SUCCESS or error code */
+UNIV_INTERN
+ulint
+dict_create_or_check_added_cols_default_tables(void)
+/*================================================*/
+{
+	dict_table_t*	table1;
+
+	ulint		error;
+	trx_t*		trx;
+
+	mutex_enter(&(dict_sys->mutex));
+
+	table1 = dict_table_get_low("SYS_ADDED_COLS_DEFAULT");	
+
+	if (table1 && UT_LIST_GET_LEN(table1->indexes) == 1){
+
+		/* sys_added_cols_default table have already been
+		created, and it's ok */
+
+		mutex_exit(&(dict_sys->mutex));
+
+#ifdef DEBUG
+        fprintf(stderr,
+            "SYS_ADDED_COLS_DEFAULT table have created success!!!!\n");
+#endif
+        return(DB_SUCCESS);
+	}
+
+#ifdef DEBUG
+    fprintf(stderr,
+        "SYS_ADDED_COLS_DEFAULT table have not created yet!!!\n");
+#endif
+
+	mutex_exit(&(dict_sys->mutex));
+
+	trx = trx_allocate_for_mysql();
+
+	trx->op_info = "creating added cols default";
+
+	row_mysql_lock_data_dictionary(trx);
+
+    /* sys_added_cols_default table have been created,but not OK,
+    drop it and then recreate */
+	if (table1) {
+		fprintf(stderr,
+			"InnoDB: dropping incompletely created"
+			" SYS_ADDED_COLS_DEFAULT table\n");
+		row_drop_table_for_mysql("SYS_ADDED_COLS_DEFAULT", trx, TRUE);
+	}
+
+	fprintf(stderr,
+		"InnoDB: Creating sys_added_cols_default for fast add colums with default value\n");
+
+	
+	/* 
+        NOTE: We create the added cols default here.
+        sys_added_cols_default(
+        table_id    int,        //table id
+        pos         int,        // column id
+        def_val     varbinary,  //default value
+        def_val_len int         //default value's length
+        )
+    */
+
+	error = que_eval_sql(NULL,
+			     "PROCEDURE CREATE_ADDED_COLS_DEFAULT_SYS_TABLES_PROC () IS\n"
+			     "BEGIN\n"
+			     "CREATE TABLE\n"
+                 "SYS_ADDED_COLS_DEFAULT(TABLE_ID BINARY(8), POS INT,"
+                 " DEF_VAL BINARY(65535), DEF_VAL_LEN INT);\n"
+			     "CREATE UNIQUE CLUSTERED INDEX TID_POS"
+			     " ON SYS_ADDED_COLS_DEFAULT (TABLE_ID,POS);\n"
+			     "END;\n"
+			     , FALSE, trx);
+
+	if (error != DB_SUCCESS) {
+		fprintf(stderr, "InnoDB: error %lu in creation\n",
+			(ulong) error);
+
+		ut_a(error == DB_OUT_OF_FILE_SPACE
+		     || error == DB_TOO_MANY_CONCURRENT_TRXS);
+
+		fprintf(stderr,
+			"InnoDB: creation failed\n"
+			"InnoDB: tablespace is full\n"
+			"InnoDB: dropping incompletely created"
+			" SYS_FOREIGN tables\n");
+		
+		row_drop_table_for_mysql("SYS_ADDED_COLS_DEFAULT", trx, TRUE);
+
+		error = DB_MUST_GET_MORE_FILE_SPACE;
+	}
+
+	trx_commit_for_mysql(trx);
+
+	row_mysql_unlock_data_dictionary(trx);
+
+	trx_free_for_mysql(trx);
+
+	if (error == DB_SUCCESS) {
+		fprintf(stderr,
+			"InnoDB: Added columns default system tables"
+			" created\n");
+	}
+
+	return(error);
 }

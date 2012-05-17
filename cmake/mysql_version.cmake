@@ -85,7 +85,7 @@ IF(NOT MYSQL_UNIX_ADDR)
   SET(MYSQL_UNIX_ADDR "/tmp/mysql.sock")
 ENDIF()
 IF(NOT COMPILATION_COMMENT)
-  SET(COMPILATION_COMMENT "Source distribution")
+  SET(COMPILATION_COMMENT "Source distribution(GCS)")
 ENDIF()
 
 

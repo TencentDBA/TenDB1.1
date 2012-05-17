@@ -139,6 +139,15 @@ be less than 256 */
 
 #define	DATA_N_SYS_COLS 3	/* number of system columns defined above */
 
+#define DATA_N_INIT_COLS 10 /* number of least columns mem to allocate for altered dict_table,include 3 system cols */
+#define DATA_N_COLS_INC  10 /* number of columns to increment when fast added column */
+
+#define DATA_N_INIT_COL_NAMES_LENGTH 100  /* length of least col_length allocate for col_length after the first fast alter */
+#define DATA_N_COL_NAMES_LENGTH_INC  100  /* length of mem allocate increment for dict_table col_names */
+
+#define DATA_N_INDEX_INIT_FIELDS    10     /* number of least index field allocate */
+#define DATA_N_INDEX_FIELDS_INC     10     /* number of least index increment for fast alter table */
+
 #define DATA_SYS_PRTYPE_MASK 0xF /* mask to extract the above from prtype */
 
 /* Flags ORed to the precise data type */

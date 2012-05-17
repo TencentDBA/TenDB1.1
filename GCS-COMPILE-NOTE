@@ -1,0 +1,13 @@
+Now our server's gcc version is gcc-4.1*.But the mysql ORG compile the mysql-5.5.24 by gcc-4.3.4.
+So we compile a gcc version of 4.3.4,and now we compile the GCS version by the follow commands:
+
+#first export the LD lib path
+export LD_LIBRARY_PATH=/usr/local/gmp-5.0.5/lib:/usr/local/mpfr-3.1.1/lib:/usr/local/mpc-0.9/lib
+
+#generate the config file
+cmake .. -DMYSQL_SERVER_SUFFIX=-tmysql-1.0 -DBUILD_CONFIG=mysql_release -DCMAKE_C_COMPILER=/usr/local/gcc-4.3.4/bin/gcc -DCMAKE_CXX_COMPILER=/usr/local/gcc-4.3.4/bin/g++ -DCMAKE_INSTALL_PREFIX=/usr/local/mysql 
+
+Note: 
+the MYSQL_SERVER_SUFFIX option's rule is follow:
+-tmysql-1.0 : tmysql with fast add column function for innodb general table(NONE-PARTITION table)
+-tmysql-1.1 : tmysql with fast add column function for innodb PARTITION/general table.

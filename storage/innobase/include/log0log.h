@@ -775,7 +775,7 @@ struct log_struct{
 	byte*		buf_ptr;	/* unaligned log buffer */
 	byte*		buf;		/*!< log buffer */
 	ulint		buf_size;	/*!< log buffer size in bytes */
-	ulint		max_buf_free;	/*!< recommended maximum value of
+	ulint		max_buf_free;	/*!< recommended maximum value of   （一般是buf_size/2 - 66k）
 					buf_free, after which the buffer is
 					flushed */
 	ulint		old_buf_free;	/*!< value of buf free when log was
@@ -828,7 +828,7 @@ struct log_struct{
 					flushed_to_disk_lsn or
 					write_lsn which are always
 					up-to-date and accurate. */
-	ib_uint64_t	write_lsn;	/*!< end lsn for the current running
+	ib_uint64_t	write_lsn;	/*!< end lsn for the current running                本次刷日志的目的LSN
 					write */
 	ulint		write_end_offset;/*!< the data in buffer has
 					been written up to this offset
@@ -837,7 +837,7 @@ struct log_struct{
 					to buf_next_to_write */
 	ib_uint64_t	current_flush_lsn;/*!< end lsn for the current running
 					write + flush operation */
-	ib_uint64_t	flushed_to_disk_lsn;
+	ib_uint64_t	flushed_to_disk_lsn;                                            /** 已刷盘LSN */
 					/*!< how far we have written the log
 					AND flushed to disk */
 	ulint		n_pending_writes;/*!< number of currently
@@ -874,7 +874,7 @@ struct log_struct{
 	/* @} */
 
 	/** Fields involved in checkpoints @{ */
-	ulint		log_group_capacity; /*!< capacity of the log group; if
+	ulint		log_group_capacity; /*!< capacity of the log group; if      (一般略小于90%*log_file_size*n_log_file)
 					the checkpoint age exceeds this, it is
 					a serious error because it is possible
 					we will then overwrite log and spoil
@@ -907,9 +907,9 @@ struct log_struct{
 					new query step is started */
 	ib_uint64_t	next_checkpoint_no;
 					/*!< next checkpoint number */
-	ib_uint64_t	last_checkpoint_lsn;
+	ib_uint64_t	last_checkpoint_lsn;                                /* 当前已经写入Checkpoint的LSN */
 					/*!< latest checkpoint lsn */
-	ib_uint64_t	next_checkpoint_lsn;
+	ib_uint64_t	next_checkpoint_lsn;                                /* 下次checkpoint的LSN，执行checkpoint时在计算当前脏页的最大LSN */
 					/*!< next checkpoint lsn */
 	ulint		n_pending_checkpoint_writes;
 					/*!< number of currently pending

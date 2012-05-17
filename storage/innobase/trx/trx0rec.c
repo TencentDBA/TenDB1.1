@@ -260,6 +260,8 @@ trx_undo_page_report_insert(
 
 		ptr += mach_write_compressed(ptr, flen);
 
+        ut_ad( flen != UNIV_SQL_DEFAULT);
+
 		if (flen != UNIV_SQL_NULL) {
 			if (trx_undo_left(undo_page, ptr) < flen) {
 
@@ -326,6 +328,8 @@ byte*
 trx_undo_rec_get_col_val(
 /*=====================*/
 	byte*	ptr,	/*!< in: pointer to remaining part of undo log record */
+    dict_index_t*   index,
+    ulint           pos,        
 	byte**	field,	/*!< out: pointer to stored field */
 	ulint*	len,	/*!< out: length of the field, or UNIV_SQL_NULL */
 	ulint*	orig_len)/*!< out: original length of the locally
@@ -336,10 +340,18 @@ trx_undo_rec_get_col_val(
 
 	*orig_len = 0;
 
+    //ut_ad(*len != UNIV_SQL_DEFAULT);
+
 	switch (*len) {
 	case UNIV_SQL_NULL:
 		*field = NULL;
 		break;
+    case UNIV_SQL_DEFAULT:
+        /* 该长度是(UNIV_SQL_NULL - 1), 因此不可能是(UNIV_EXTERN_STORAGE_FIELD + *len), 因为*len不可能等于UNIV_PAGE_SIZE - 1（恒小于页面一半） */
+        ut_a(pos != ULINT_UNDEFINED && dict_index_is_gcs_clust_after_alter_table(index));
+
+        *field = (byte*)dict_index_get_nth_col_def(index, pos, len);
+        break;
 	case UNIV_EXTERN_STORAGE_FIELD:
 		*orig_len = mach_read_compressed(ptr);
 		ptr += mach_get_compressed_size(*orig_len);
@@ -363,7 +375,7 @@ trx_undo_rec_get_col_val(
 	default:
 		*field = ptr;
 		if (*len >= UNIV_EXTERN_STORAGE_FIELD) {
-			ptr += *len - UNIV_EXTERN_STORAGE_FIELD;
+			ptr += *len - UNIV_EXTERN_STORAGE_FIELD;            /* 行外存储，但长度大于前缀索引键最大长度！见trx_undo_page_report_modify_ext */
 		} else {
 			ptr += *len;
 		}
@@ -410,7 +422,8 @@ trx_undo_rec_get_row_ref(
 
 		dfield = dtuple_get_nth_field(*ref, i);
 
-		ptr = trx_undo_rec_get_col_val(ptr, &field, &len, &orig_len);
+        /* 主键值不可能是默认值 */
+		ptr = trx_undo_rec_get_col_val(ptr, index, ULINT_UNDEFINED, &field, &len, &orig_len);
 
 		dfield_set_data(dfield, field, len);
 	}
@@ -442,7 +455,7 @@ trx_undo_rec_skip_row_ref(
 		ulint	len;
 		ulint	orig_len;
 
-		ptr = trx_undo_rec_get_col_val(ptr, &field, &len, &orig_len);
+		ptr = trx_undo_rec_get_col_val(ptr, index, ULINT_UNDEFINED, &field, &len, &orig_len);
 	}
 
 	return(ptr);
@@ -587,7 +600,7 @@ trx_undo_page_report_modify(
 
 	if (!update) {
 		type_cmpl = TRX_UNDO_DEL_MARK_REC;
-	} else if (rec_get_deleted_flag(rec, dict_table_is_comp(table))) {
+	} else if (rec_get_deleted_flag(rec, dict_table_is_comp(table))) {      /* 什么时候会发生呢？参考row_ins_clust_index_entry_by_modify */
 		type_cmpl = TRX_UNDO_UPD_DEL_REC;
 		/* We are about to update a delete marked record.
 		We don't typically need the prefix in this case unless
@@ -624,7 +637,7 @@ trx_undo_page_report_modify(
 	by some other trx as it must have committed by now for us to
 	allow an over-write. */
 	if (ignore_prefix) {
-		ignore_prefix = (trx_id != trx->id);
+		ignore_prefix = (trx_id != trx->id);                    /* 同一事务：插入、删除、再插入主键相同的记录（由于之前的删除purge无效了，需要依赖这次插入来完成之前的purge，所以需要保存前缀）；不同事务：插入与准备purge主键相同的记录，因为此purge不需执行了，所以不保存前缀？ */
 	}
 	ptr += mach_ull_write_compressed(ptr, trx_id);
 
@@ -642,6 +655,7 @@ trx_undo_page_report_modify(
 	for (i = 0; i < dict_index_get_n_unique(index); i++) {
 
 		field = rec_get_nth_field(rec, offsets, i, &flen);
+        ut_ad(flen != UNIV_SQL_DEFAULT);
 
 		/* The ordering columns must not be stored externally. */
 		ut_ad(!rec_offs_nth_extern(offsets, i));
@@ -690,7 +704,10 @@ trx_undo_page_report_modify(
 
 			/* Save the old value of field */
 			field = rec_get_nth_field(rec, offsets, pos, &flen);
-
+//             if (flen == UNIV_SQL_DEFAULT) {             
+//                 field = dict_index_get_nth_col_def(index, pos, &flen);
+// 
+//             }
 			if (trx_undo_left(undo_page, ptr) < 15) {
 
 				return(0);
@@ -725,7 +742,7 @@ trx_undo_page_report_modify(
 				ptr += mach_write_compressed(ptr, flen);
 			}
 
-			if (flen != UNIV_SQL_NULL) {
+			if (flen != UNIV_SQL_NULL && flen != UNIV_SQL_DEFAULT) {
 				if (trx_undo_left(undo_page, ptr) < flen) {
 
 					return(0);
@@ -751,7 +768,7 @@ trx_undo_page_report_modify(
 	clustered index. This works also in crash recovery, because all pages
 	(including BLOBs) are recovered before anything is rolled back. */
 
-	if (!update || !(cmpl_info & UPD_NODE_NO_ORD_CHANGE)) {
+	if (!update || !(cmpl_info & UPD_NODE_NO_ORD_CHANGE)) {                 /* 存储索引键，用于purge */
 		byte*	old_ptr = ptr;
 
 		trx->update_undo->del_marks = TRUE;
@@ -788,8 +805,10 @@ trx_undo_page_report_modify(
 				/* Save the old value of field */
 				field = rec_get_nth_field(rec, offsets, pos,
 							  &flen);
+//                 if (flen == UNIV_SQL_DEFAULT) 
+//                     field = dict_index_get_nth_col_def(index, pos, &flen);
 
-				if (rec_offs_nth_extern(offsets, pos)) {
+				if (rec_offs_nth_extern(offsets, pos)) {                /* 前缀索引列？ */
 					const dict_col_t*	col =
 						dict_index_get_nth_col(
 							index, pos);
@@ -811,7 +830,7 @@ trx_undo_page_report_modify(
 						ptr, flen);
 				}
 
-				if (flen != UNIV_SQL_NULL) {
+				if (flen != UNIV_SQL_NULL && flen != UNIV_SQL_DEFAULT) {
 					if (trx_undo_left(undo_page, ptr)
 					    < flen) {
 
@@ -1012,7 +1031,7 @@ trx_undo_update_rec_get_update(
 
 		upd_field_set_field_no(upd_field, field_no, index, trx);
 
-		ptr = trx_undo_rec_get_col_val(ptr, &field, &len, &orig_len);
+		ptr = trx_undo_rec_get_col_val(ptr, index, field_no, &field, &len, &orig_len);
 
 		upd_field->orig_len = orig_len;
 
@@ -1088,7 +1107,8 @@ trx_undo_rec_get_partial_row(
 		col = dict_index_get_nth_col(index, field_no);
 		col_no = dict_col_get_no(col);
 
-		ptr = trx_undo_rec_get_col_val(ptr, &field, &len, &orig_len);
+        /* 用于获得索引列值，也可能是默认值 */
+		ptr = trx_undo_rec_get_col_val(ptr, index, field_no, &field, &len, &orig_len);
 
 		dfield = dtuple_get_nth_field(*row, col_no);
 
@@ -1302,7 +1322,7 @@ trx_undo_report_row_operation(
 			version the replicate page constructed using the log
 			records stays identical to the original page */
 
-			if (!trx_undo_erase_page_end(undo_page, &mtr)) {
+			if (!trx_undo_erase_page_end(undo_page, &mtr)) {                        /* 一个空的undo页都无法满足undo记录的需要！ */
 				/* The record did not fit on an empty
 				undo page. Discard the freshly allocated
 				page and return an error. */

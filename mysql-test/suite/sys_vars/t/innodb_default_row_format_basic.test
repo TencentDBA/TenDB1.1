@@ -1,0 +1,80 @@
+
+
+# 2012-09-19 - Added
+#
+
+--source include/have_innodb.inc
+
+SET @start_global_value = @@global.innodb_default_row_format;
+SELECT @start_global_value;
+
+#
+# exists as global only
+#
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+select @@session.innodb_default_row_format;
+show global variables like 'innodb_default_row_format';
+show session variables like 'innodb_default_row_format';
+select * from information_schema.global_variables where variable_name='innodb_default_row_format';
+select * from information_schema.session_variables where variable_name='innodb_default_row_format';
+
+#
+# show that it's writable
+#
+set global innodb_default_row_format=compact;
+select @@global.innodb_default_row_format;
+select * from information_schema.global_variables where variable_name='innodb_default_row_format';
+select * from information_schema.session_variables where variable_name='innodb_default_row_format';
+--error ER_GLOBAL_VARIABLE
+set session innodb_default_row_format=1;
+
+#
+# incorrect types
+#
+--error ER_WRONG_TYPE_FOR_VAR
+set global innodb_default_row_format=1.1;
+--error ER_WRONG_TYPE_FOR_VAR
+set global innodb_default_row_format=1e1;
+--error ER_WRONG_VALUE_FOR_VAR
+set global innodb_default_row_format="foo";
+
+set global innodb_default_row_format=gcs;
+select @@global.innodb_default_row_format;
+select * from information_schema.global_variables where variable_name='innodb_default_row_format';
+set global innodb_default_row_format=compact;
+select @@global.innodb_default_row_format;
+select * from information_schema.global_variables where variable_name='innodb_default_row_format';
+
+
+#test partition default row_format 
+use test;
+set global innodb_default_row_format=compact;
+
+create table t_part(
+id int not null
+) partition by range(id)(
+partition p1 values less than(100),
+partition p2 values less than(200),
+partition p3 values less than(300));
+
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where TABLE_SCHEMA = 'test' and table_name= 't_part';
+
+set global innodb_default_row_format=gcs;
+
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where TABLE_SCHEMA = 'test' and table_name= 't_part';
+
+alter table t_part add partition (partition p4 values less than(400));
+
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where TABLE_SCHEMA = 'test' and table_name= 't_part';
+
+alter table t_part engine=innodb;
+
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where TABLE_SCHEMA = 'test' and table_name= 't_part';
+
+SET @@global.innodb_default_row_format = @start_global_value;
+SELECT @@global.innodb_default_row_format;
+
+
+
+
+

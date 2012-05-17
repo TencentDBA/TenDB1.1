@@ -1687,7 +1687,7 @@ variable_value - @innodb_rows_deleted_orig
 71
 SELECT variable_value - @innodb_rows_inserted_orig FROM information_schema.global_status WHERE LOWER(variable_name) = 'innodb_rows_inserted';
 variable_value - @innodb_rows_inserted_orig
-1070
+1033
 SELECT variable_value - @innodb_rows_updated_orig FROM information_schema.global_status WHERE LOWER(variable_name) = 'innodb_rows_updated';
 variable_value - @innodb_rows_updated_orig
 866
@@ -2319,7 +2319,7 @@ t1	CREATE TABLE `t1` (
 drop table t1;
 create table t1 (v varchar(10), c char(10)) row_format=fixed;
 Warnings:
-Warning	1478	InnoDB: assuming ROW_FORMAT=COMPACT.
+Warning	1478	InnoDB: assuming ROW_FORMAT=GCS.
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (

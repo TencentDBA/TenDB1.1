@@ -161,7 +161,7 @@ pars_func_low(
 
 	node->func = func;
 
-	node->class = pars_func_get_class(func);
+	node->fclass = pars_func_get_class(func);
 
 	node->args = arg;
 
@@ -686,7 +686,7 @@ pars_check_aggregate(
 
 			func_node = exp_node;
 
-			if (func_node->class == PARS_FUNC_AGGREGATE) {
+			if (func_node->fclass == PARS_FUNC_AGGREGATE) {
 
 				n_aggregate_nodes++;
 			}
@@ -1627,7 +1627,7 @@ pars_create_table(
 	/* As the InnoDB SQL parser is for internal use only,
 	for creating some system tables, this function will only
 	create tables in the old (not compact) record format. */
-	table = dict_mem_table_create(table_sym->name, 0, n_cols, 0);
+	table = dict_mem_table_create(table_sym->name, 0, n_cols, 0, FALSE, 0);
 
 #ifdef UNIV_DEBUG
 	if (not_fit_in_memory != NULL) {
@@ -2002,6 +2002,22 @@ pars_info_add_str_literal(
 {
 	pars_info_add_literal(info, name, str, strlen(str),
 			      DATA_VARCHAR, DATA_ENGLISH);
+}
+
+/****************************************************************//**
+binary liternal                                                                  
+ */
+UNIV_INTERN
+void
+pars_info_add_binary_literal(
+/*======================*/
+	pars_info_t*	info,		/*!< in: info struct */
+	const char*	    name,		/*!< in: name */
+	const byte*	    val,		/*!< in: val */
+    ulint           val_len)
+{
+	pars_info_add_literal(info, name, val, val_len,
+			      DATA_FIXBINARY, DATA_BINARY_TYPE);
 }
 
 /****************************************************************//**

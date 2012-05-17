@@ -1432,13 +1432,13 @@ struct buf_page_struct{
 					should hold: in_free_list
 					== (state == BUF_BLOCK_NOT_USED) */
 #endif /* UNIV_DEBUG */
-	ib_uint64_t	newest_modification;
+	ib_uint64_t	newest_modification;                                            /* 最后一个修改mtr的end_lsn */
 					/*!< log sequence number of
 					the youngest modification to
 					this block, zero if not
 					modified. Protected by block
 					mutex */
-	ib_uint64_t	oldest_modification;
+	ib_uint64_t	oldest_modification;                                            /* 一个页面被第一个mtr修改时的start_lsn，不为0表示一定在flush list，并且未刷盘。如果此时系统崩溃，该页面需要重做[oldest_modification, newest_modification]的日志 */
 					/*!< log sequence number of
 					the START of the log entry
 					written of the oldest
@@ -1464,7 +1464,7 @@ struct buf_page_struct{
 					the LRU list; used in
 					debugging */
 #endif /* UNIV_DEBUG */
-	unsigned	old:1;		/*!< TRUE if the block is in the old
+	unsigned	old:1;		/*!< TRUE if the block is in the old                    buf_page_create的页面一般为false，buf_page_init的页面一般为true？跟flush_lru的邻居页有关，邻居页只刷old为true的页面
 					blocks in buf_pool->LRU_old */
 	unsigned	freed_page_clock:31;/*!< the value of
 					buf_pool->freed_page_clock

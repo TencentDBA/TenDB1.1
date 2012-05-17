@@ -253,8 +253,8 @@ row_purge_poss_sec(
 	ut_ad(!dict_index_is_clust(index));
 	mtr_start(&mtr);
 
-	can_delete = !row_purge_reposition_pcur(BTR_SEARCH_LEAF, node, &mtr)
-		|| !row_vers_old_has_index_entry(TRUE,
+	can_delete = !row_purge_reposition_pcur(BTR_SEARCH_LEAF, node, &mtr)            /* 聚集索引记录不存在（why），或 */
+		|| !row_vers_old_has_index_entry(TRUE,                                      /*  */
 						 btr_pcur_get_rec(&node->pcur),
 						 &mtr, index, entry);
 
@@ -291,7 +291,7 @@ row_purge_remove_sec_if_poss_tree(
 	switch (search_result) {
 	case ROW_NOT_FOUND:
 		/* Not found.  This is a legitimate condition.  In a
-		rollback, InnoDB will remove secondary recs that would
+		rollback, InnoDB will remove secondary recs that would                       如先插入，再update二级索引，rollback会删掉
 		be purged anyway.  Then the actual purge will not find
 		the secondary index record.  Also, the purge itself is
 		eager: if it comes to consider a secondary index
@@ -708,16 +708,16 @@ err_exit:
 		goto err_exit;
 	}
 
-	ptr = trx_undo_rec_get_row_ref(ptr, clust_index, &(node->ref),
+	ptr = trx_undo_rec_get_row_ref(ptr, clust_index, &(node->ref),                          /* 得到原来的主键值 */
 				       node->heap);
 
-	ptr = trx_undo_update_rec_get_update(ptr, clust_index, type, trx_id,
+	ptr = trx_undo_update_rec_get_update(ptr, clust_index, type, trx_id,                    /* 更新前的原值，对于delete来说，只有trx_id和roll ptr */
 					     roll_ptr, info_bits, trx,
 					     node->heap, &(node->update));
 
 	/* Read to the partial row the fields that occur in indexes */
 
-	if (!(node->cmpl_info & UPD_NODE_NO_ORD_CHANGE)) {
+	if (!(node->cmpl_info & UPD_NODE_NO_ORD_CHANGE)) {                                      /* 如果更新改变了索引键，获得索引键的原值 */                            
 		ptr = trx_undo_rec_get_partial_row(
 			ptr, clust_index, &node->row,
 			type == TRX_UNDO_UPD_DEL_REC,

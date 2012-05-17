@@ -463,10 +463,13 @@ mlog_open_and_write_index(
 	} else {
 		ulint	i;
 		ulint	n	= dict_index_get_n_fields(index);
+        ibool   is_gcs_cluster = dict_index_is_gcs_clust_after_alter_table(index);
 		/* total size needed */
-		ulint	total	= 11 + size + (n + 2) * 2;
+        /* redo日志有可能需要多两字节，total需要根据实际情况分配空间！ */
+        ulint	total	= 11 + size + (n + 2 + (is_gcs_cluster ? 1 : 0)) * 2;
 		ulint	alloc	= total;
-		/* allocate at most DYN_ARRAY_DATA_SIZE at a time */
+        
+        /* allocate at most DYN_ARRAY_DATA_SIZE at a time */
 		if (alloc > DYN_ARRAY_DATA_SIZE) {
 			alloc = DYN_ARRAY_DATA_SIZE;
 		}
@@ -477,7 +480,28 @@ mlog_open_and_write_index(
 		log_end = log_ptr + alloc;
 		log_ptr = mlog_write_initial_log_record_fast(rec, type,
 							     log_ptr, mtr);
-		mach_write_to_2(log_ptr, n);
+
+        /* 在第一次alter table前，所有gcs表可以当成compact表，即使是redo过程，这样redo log也兼容！ */
+        if (is_gcs_cluster)
+        {
+            //ut_ad(rec_is_gcs(rec) || rec == page_align(rec) || rec_get_status(rec) & REC_STATUS_NODE_PTR);               /* rec有可能就是页头，如日志MLOG_COMP_LIST_END_COPY_CREATED */
+            mach_write_to_2(log_ptr, n | 0x8000);                         /* 标记是gcs表 */
+        }
+        else
+        {
+            ut_ad(rec == page_align(rec) || !rec_is_gcs(rec));
+		    mach_write_to_2(log_ptr, n);
+        }
+
+        /* 对于gcs聚集索引，记录第一次alter table前聚集索引的字段数 */
+        if (is_gcs_cluster)
+        {
+            log_ptr += 2;
+            mach_write_to_2(log_ptr, (ulint)index->n_fields_before_alter);
+
+            ut_ad(!index->n_fields_before_alter == !dict_index_is_gcs_clust_after_alter_table(index));
+        }
+
 		log_ptr += 2;
 		mach_write_to_2(log_ptr,
 				dict_index_get_n_unique_in_tree(index));
@@ -544,6 +568,8 @@ mlog_parse_index(
 	ulint		i, n, n_uniq;
 	dict_table_t*	table;
 	dict_index_t*	ind;
+    ibool           is_gcs = FALSE;
+    ulint           n_fields_before_alter = 0;        /* 快速alter table前聚集索引的字段数 */
 
 	ut_ad(comp == FALSE || comp == TRUE);
 
@@ -552,7 +578,25 @@ mlog_parse_index(
 			return(NULL);
 		}
 		n = mach_read_from_2(ptr);
-		ptr += 2;
+        if (n & 0x8000)                     /* 最高位为1表示GCS表 */
+        {
+            is_gcs = TRUE;
+            n &= 0x7FFF;
+        }
+
+        ptr += 2;
+        if (is_gcs)
+        {
+            n_fields_before_alter = mach_read_from_2(ptr);
+            ut_ad(n_fields_before_alter < n && n_fields_before_alter > 0);
+            ptr += 2;
+
+            /* 确保地址有效！*/
+            if (end_ptr < ptr + 2) {
+                return(NULL);
+            }
+        }
+
 		n_uniq = mach_read_from_2(ptr);
 		ptr += 2;
 		ut_ad(n_uniq <= n);
@@ -563,7 +607,7 @@ mlog_parse_index(
 		n = n_uniq = 1;
 	}
 	table = dict_mem_table_create("LOG_DUMMY", DICT_HDR_SPACE, n,
-				      comp ? DICT_TF_COMPACT : 0);
+				      comp ? DICT_TF_COMPACT : 0, is_gcs, n_fields_before_alter);
 	ind = dict_mem_index_create("LOG_DUMMY", "LOG_DUMMY",
 				    DICT_HDR_SPACE, 0, n);
 	ind->table = table;
@@ -582,9 +626,20 @@ mlog_parse_index(
 			dict_mem_table_add_col(
 				table, NULL, NULL,
 				((len + 1) & 0x7fff) <= 1
-				? DATA_BINARY : DATA_FIXBINARY,
+				? DATA_BINARY : DATA_FIXBINARY,         /* 若len 为0或0x7fff，可认为是变长字段；否则是定长字段 */
 				len & 0x8000 ? DATA_NOT_NULL : 0,
 				len & 0x7fff);
+
+            if (is_gcs && n_fields_before_alter > 0 && n_fields_before_alter <= i)
+            {
+                dict_col_t*     col = NULL;
+
+                col = dict_table_get_nth_col(table, i);
+
+                /* 添加默认值信息，但只是占位符，并不需真正的默认值信息 */
+                if (!dict_col_is_nullable(col))
+                    dict_mem_table_set_col_default(table, col, table->heap);
+            }
 
 			dict_index_add_col(ind, table,
 					   dict_table_get_nth_col(table, i),
@@ -603,7 +658,28 @@ mlog_parse_index(
 				= &table->cols[n + DATA_TRX_ID];
 			ind->fields[DATA_ROLL_PTR - 1 + n_uniq].col
 				= &table->cols[n + DATA_ROLL_PTR];
+
+            /* set the col_ind col->ind */
+            ind->fields[DATA_TRX_ID - 1 + n_uniq].col_ind
+                = ind->fields[DATA_TRX_ID - 1 + n_uniq].col->ind;
+            ind->fields[DATA_ROLL_PTR - 1 + n_uniq].col_ind
+                = ind->fields[DATA_ROLL_PTR - 1 + n_uniq].col->ind;
 		}
+
+        if (dict_index_is_gcs_clust_after_alter_table(ind))
+        {
+            ut_ad(table->n_cols == table->n_def);
+            ut_a(table->n_cols_before_alter_table > 0 &&
+                table->n_cols_before_alter_table <= table->n_cols);
+            ind->n_fields_before_alter = n_fields_before_alter;
+            ind->n_nullable_before_alter  = dict_index_get_first_n_field_n_nullable(ind, ind->n_fields_before_alter);
+        }
+        else
+        {
+            ind->n_fields_before_alter = 0;
+            ind->n_nullable_before_alter  = 0;
+        }
+        
 	}
 	/* avoid ut_ad(index->cached) in dict_index_get_n_unique_in_tree */
 	ind->cached = TRUE;

@@ -77,7 +77,7 @@ static const LEX_STRING sys_table_aliases[]=
 };
 
 const char *ha_row_type[] = {
-  "", "FIXED", "DYNAMIC", "COMPRESSED", "REDUNDANT", "COMPACT",
+  "", "FIXED", "DYNAMIC", "COMPRESSED", "REDUNDANT", "COMPACT","GCS",
   /* Reserved to be "PAGE" in future versions */ "?",
   "?","?","?"
 };
@@ -2207,6 +2207,15 @@ THD *handler::ha_thd(void) const
 {
   DBUG_ASSERT(!table || !table->in_use || table->in_use == current_thd);
   return (table && table->in_use) ? table->in_use : current_thd;
+}
+
+char *handler::ha_query(void) const
+{
+    THD*    thd;
+
+    thd = ha_thd();
+
+    return thd->query();
 }
 
 PSI_table_share *handler::ha_table_share_psi(const TABLE_SHARE *share) const
@@ -5189,6 +5198,21 @@ void signal_log_not_needed(struct handlerton, char *log_file)
   DBUG_PRINT("enter", ("logfile '%s'", log_file));
   DBUG_VOID_RETURN;
 }
+
+
+
+/******************************************************** 5.6 ********************************************************/
+/*
+   Default implementation to support in-place alter table
+   and old online add/drop index API
+*/
+
+void handler::notify_table_changed()
+{
+  ha_create_handler_files(table->s->path.str, NULL, CHF_INDEX_FLAG, NULL);
+}
+
+/******************************************************** end 5.6 *********************************************************/
 
 
 #ifdef TRANS_LOG_MGM_EXAMPLE_CODE

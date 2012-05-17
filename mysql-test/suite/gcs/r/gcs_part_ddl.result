@@ -1,0 +1,216 @@
+create table tb1(
+c1 int not null primary key auto_increment,
+c2 varchar(128) not null default 'aa',
+c3 char(24),
+c4 int not null default 1,
+c5 blob,
+c6 timestamp,
+key idx(c2,c3,c4)
+) engine=innodb row_format=gcs charset=utf8 partition by range(c1) 
+(partition p1 values less than (100),
+partition p2 values less than (200),
+partition p3 values less than (300),
+partition p4 values less than (400));
+insert into tb1(c1,c2,c3,c4,c5,c6) values(1,'aa','bbb',12345,'abcd1234','2012-12-21');
+insert into tb1(c1,c2,c3,c4,c5,c6) values(101,'aa','bbb',12345,'abcd1234','2012-12-21');
+insert into tb1(c1,c2,c3,c4,c5,c6) values(201,'aa','bbb',12345,'abcd1234','2012-12-21');
+insert into tb1(c1,c2,c3,c4,c5,c6) values(301,'aa','bbb',12345,'abcd1234','2012-12-21');
+select * from tb1;
+c1	c2	c3	c4	c5	c6
+1	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+101	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+201	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+301	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+select * from tb1 where c1 >100 and c1 <99;
+c1	c2	c3	c4	c5	c6
+select * from tb1 where c1 >99 and c1 <101;
+c1	c2	c3	c4	c5	c6
+select * from tb1 where c1 > 100000000000;
+c1	c2	c3	c4	c5	c6
+select * from tb1 where c1 < -10000000000;
+c1	c2	c3	c4	c5	c6
+insert into tb1 set c1 = 302,c6='2012-12-21';
+update tb1 set c1 = 202 where c1=302;
+delete from tb1 where c1=202;
+alter table tb1 add partition (partition p5 values less than (500));
+show create table tb1;
+Table	Create Table
+tb1	CREATE TABLE `tb1` (
+  `c1` int(11) NOT NULL AUTO_INCREMENT,
+  `c2` varchar(128) NOT NULL DEFAULT 'aa',
+  `c3` char(24) DEFAULT NULL,
+  `c4` int(11) NOT NULL DEFAULT '1',
+  `c5` blob,
+  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`c1`),
+  KEY `idx` (`c2`,`c3`,`c4`)
+) ENGINE=InnoDB AUTO_INCREMENT=303 DEFAULT CHARSET=utf8 ROW_FORMAT=GCS
+/*!50100 PARTITION BY RANGE (c1)
+(PARTITION p1 VALUES LESS THAN (100) ENGINE = InnoDB,
+ PARTITION p2 VALUES LESS THAN (200) ENGINE = InnoDB,
+ PARTITION p3 VALUES LESS THAN (300) ENGINE = InnoDB,
+ PARTITION p4 VALUES LESS THAN (400) ENGINE = InnoDB,
+ PARTITION p5 VALUES LESS THAN (500) ENGINE = InnoDB) */
+insert into tb1 set c1=499,c6='2012-12-21';
+select * from tb1;
+c1	c2	c3	c4	c5	c6
+1	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+101	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+201	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+301	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+499	aa	NULL	1	NULL	2012-12-21 00:00:00
+alter table tb1 drop partition p1;
+select * from tb1;
+c1	c2	c3	c4	c5	c6
+101	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+201	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+301	aa	bbb	12345	abcd1234	2012-12-21 00:00:00
+499	aa	NULL	1	NULL	2012-12-21 00:00:00
+alter table tb1 add column c7 int not null default '12345';
+select * from tb1;
+c1	c2	c3	c4	c5	c6	c7
+101	aa	bbb	12345	abcd1234	2012-12-21 00:00:00	12345
+201	aa	bbb	12345	abcd1234	2012-12-21 00:00:00	12345
+301	aa	bbb	12345	abcd1234	2012-12-21 00:00:00	12345
+499	aa	NULL	1	NULL	2012-12-21 00:00:00	12345
+alter table tb1 add partition (partition p6 values less than (600));
+select * from tb1;
+c1	c2	c3	c4	c5	c6	c7
+101	aa	bbb	12345	abcd1234	2012-12-21 00:00:00	12345
+201	aa	bbb	12345	abcd1234	2012-12-21 00:00:00	12345
+301	aa	bbb	12345	abcd1234	2012-12-21 00:00:00	12345
+499	aa	NULL	1	NULL	2012-12-21 00:00:00	12345
+alter table tb1 add index idx_1(c1,c2,c3,c7);
+show create table tb1;
+Table	Create Table
+tb1	CREATE TABLE `tb1` (
+  `c1` int(11) NOT NULL AUTO_INCREMENT,
+  `c2` varchar(128) NOT NULL DEFAULT 'aa',
+  `c3` char(24) DEFAULT NULL,
+  `c4` int(11) NOT NULL DEFAULT '1',
+  `c5` blob,
+  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `c7` int(11) NOT NULL DEFAULT '12345',
+  PRIMARY KEY (`c1`),
+  KEY `idx` (`c2`,`c3`,`c4`),
+  KEY `idx_1` (`c1`,`c2`,`c3`,`c7`)
+) ENGINE=InnoDB AUTO_INCREMENT=500 DEFAULT CHARSET=utf8 ROW_FORMAT=GCS
+/*!50100 PARTITION BY RANGE (c1)
+(PARTITION p2 VALUES LESS THAN (200) ENGINE = InnoDB,
+ PARTITION p3 VALUES LESS THAN (300) ENGINE = InnoDB,
+ PARTITION p4 VALUES LESS THAN (400) ENGINE = InnoDB,
+ PARTITION p5 VALUES LESS THAN (500) ENGINE = InnoDB,
+ PARTITION p6 VALUES LESS THAN (600) ENGINE = InnoDB) */
+insert into tb1 set c1 = 502,c6='2012-12-21';
+update tb1 set c1 = 402 where c1=502;
+delete from tb1 where c1=402;
+alter table tb1 drop partition p2;
+alter table tb1 drop partition p3;
+alter table tb1 drop partition p4;
+alter table tb1 drop partition p5;
+select * from tb1;
+c1	c2	c3	c4	c5	c6	c7
+alter table tb1 drop index idx_1;
+alter table tb1 add partition (partition p7 values less than (700));
+alter table tb1 add partition (partition p8 values less than (800));
+select * from tb1;
+c1	c2	c3	c4	c5	c6	c7
+insert into tb1 set c1 = 702,c6='2012-12-21';
+update tb1 set c1 = 602 where c1=702;
+delete from tb1 where c1=602;
+alter table tb1 add column c8 varchar(128) ;
+select * from tb1;
+c1	c2	c3	c4	c5	c6	c7	c8
+alter table tb1 drop column c8;
+select * from tb1 where c1 > 0;
+c1	c2	c3	c4	c5	c6	c7
+alter table tb1 add column c9 int;
+insert into tb1 set c9=100,c6='2012-12-21';
+select * from tb1;
+c1	c2	c3	c4	c5	c6	c7	c9
+703	aa	NULL	1	NULL	2012-12-21 00:00:00	12345	100
+alter table tb1 add unique index index_1 (c1,c9);
+alter table tb1 row_format=compact;
+insert into tb1 set c1 = 502,c6='2012-12-21';
+update tb1 set c1 = 402 where c1=502;
+delete from tb1 where c1=402;
+alter table tb1 add partition (partition p9 values less than (900));
+alter table tb1 add partition (partition p10 values less than (1000));
+alter table tb1 add column c10 varchar(128)  not null default '';
+insert into tb1 set c1=999,c6='2012-12-21';
+select * from tb1;
+c1	c2	c3	c4	c5	c6	c7	c9	c10
+703	aa	NULL	1	NULL	2012-12-21 00:00:00	12345	100	
+999	aa	NULL	1	NULL	2012-12-21 00:00:00	12345	NULL	
+alter table tb1 drop column c3;
+select * from tb1 where c1 >0;
+c1	c2	c4	c5	c6	c7	c9	c10
+703	aa	1	NULL	2012-12-21 00:00:00	12345	100	
+999	aa	1	NULL	2012-12-21 00:00:00	12345	NULL	
+alter table tb1 row_format=gcs;
+show create table tb1;
+Table	Create Table
+tb1	CREATE TABLE `tb1` (
+  `c1` int(11) NOT NULL AUTO_INCREMENT,
+  `c2` varchar(128) NOT NULL DEFAULT 'aa',
+  `c4` int(11) NOT NULL DEFAULT '1',
+  `c5` blob,
+  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `c7` int(11) NOT NULL DEFAULT '12345',
+  `c9` int(11) DEFAULT NULL,
+  `c10` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`c1`),
+  UNIQUE KEY `index_1` (`c1`,`c9`),
+  KEY `idx` (`c2`,`c4`)
+) ENGINE=InnoDB AUTO_INCREMENT=1000 DEFAULT CHARSET=utf8 ROW_FORMAT=GCS
+/*!50100 PARTITION BY RANGE (c1)
+(PARTITION p6 VALUES LESS THAN (600) ENGINE = InnoDB,
+ PARTITION p7 VALUES LESS THAN (700) ENGINE = InnoDB,
+ PARTITION p8 VALUES LESS THAN (800) ENGINE = InnoDB,
+ PARTITION p9 VALUES LESS THAN (900) ENGINE = InnoDB,
+ PARTITION p10 VALUES LESS THAN (1000) ENGINE = InnoDB) */
+insert into tb1 set c1=899,c6='2012-12-21';
+alter table tb1 add column c11 varchar(128) not null default '快速加字段测试中文字符';
+select * from tb1;
+c1	c2	c4	c5	c6	c7	c9	c10	c11
+703	aa	1	NULL	2012-12-21 00:00:00	12345	100		快速加字段测试中文字符
+899	aa	1	NULL	2012-12-21 00:00:00	12345	NULL		快速加字段测试中文字符
+999	aa	1	NULL	2012-12-21 00:00:00	12345	NULL		快速加字段测试中文字符
+alter table tb1 add index index_2(c1,c11);
+select * from tb1;
+c1	c2	c4	c5	c6	c7	c9	c10	c11
+703	aa	1	NULL	2012-12-21 00:00:00	12345	100		快速加字段测试中文字符
+899	aa	1	NULL	2012-12-21 00:00:00	12345	NULL		快速加字段测试中文字符
+999	aa	1	NULL	2012-12-21 00:00:00	12345	NULL		快速加字段测试中文字符
+show create table tb1;
+Table	Create Table
+tb1	CREATE TABLE `tb1` (
+  `c1` int(11) NOT NULL AUTO_INCREMENT,
+  `c2` varchar(128) NOT NULL DEFAULT 'aa',
+  `c4` int(11) NOT NULL DEFAULT '1',
+  `c5` blob,
+  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `c7` int(11) NOT NULL DEFAULT '12345',
+  `c9` int(11) DEFAULT NULL,
+  `c10` varchar(128) NOT NULL DEFAULT '',
+  `c11` varchar(128) NOT NULL DEFAULT '快速加字段测试中文字符',
+  PRIMARY KEY (`c1`),
+  UNIQUE KEY `index_1` (`c1`,`c9`),
+  KEY `idx` (`c2`,`c4`),
+  KEY `index_2` (`c1`,`c11`)
+) ENGINE=InnoDB AUTO_INCREMENT=1000 DEFAULT CHARSET=utf8 ROW_FORMAT=GCS
+/*!50100 PARTITION BY RANGE (c1)
+(PARTITION p6 VALUES LESS THAN (600) ENGINE = InnoDB,
+ PARTITION p7 VALUES LESS THAN (700) ENGINE = InnoDB,
+ PARTITION p8 VALUES LESS THAN (800) ENGINE = InnoDB,
+ PARTITION p9 VALUES LESS THAN (900) ENGINE = InnoDB,
+ PARTITION p10 VALUES LESS THAN (1000) ENGINE = InnoDB) */
+update tb1 set c11='中文测试!',c6='2012-12-21';
+select * from tb1;
+c1	c2	c4	c5	c6	c7	c9	c10	c11
+703	aa	1	NULL	2012-12-21 00:00:00	12345	100		中文测试!
+899	aa	1	NULL	2012-12-21 00:00:00	12345	NULL		中文测试!
+999	aa	1	NULL	2012-12-21 00:00:00	12345	NULL		中文测试!
+delete from tb1 where c1 <100;
+truncate table tb1;
+drop table tb1;

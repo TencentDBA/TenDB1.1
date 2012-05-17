@@ -61,9 +61,10 @@ ibool
 dfield_data_is_binary_equal(
 /*========================*/
 	const dfield_t*	field,	/*!< in: field */
-	ulint		len,	/*!< in: data length or UNIV_SQL_NULL */
+	ulint		len,	/*!< in: data length or UNIV_SQL_NULL or UNIV_SQL_DEFAULT */
 	const byte*	data)	/*!< in: data */
 {
+    /* dfield_get_len never return UNIV_SQL_DEFAULT, so len == UNIV_SQL_DEFAULT always return FALSE  */
 	if (len != dfield_get_len(field)) {
 
 		return(FALSE);

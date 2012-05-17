@@ -258,6 +258,21 @@ public:
   virtual void change_table_ptr(TABLE *table_arg, TABLE_SHARE *share);
   virtual bool check_if_incompatible_data(HA_CREATE_INFO *create_info,
                                           uint table_changes);
+  /* check if the partition table support inplace alter */
+  virtual bool check_if_supported_inplace_alter(THD *thd, TABLE *table,Alter_inplace_info *inplace_info);
+
+
+  /* fast inplace alter partition table,we just support fast add column(s) yet */
+  int inplace_alter_table(
+	  /*=============================*/
+	  TABLE*			        table,
+	  TABLE*                    tmp_table,
+	  Alter_inplace_info*	    ha_alter_info,
+      const char*	            table_name);
+
+  const char* get_row_type_str_for_gcs() const;
+  bool get_if_row_fast_altered();
+  bool get_if_opened() { return m_handler_status == handler_opened; }
 private:
   int prepare_for_rename();
   int copy_partitions(ulonglong * const copied, ulonglong * const deleted);

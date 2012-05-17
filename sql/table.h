@@ -1454,7 +1454,7 @@ struct TABLE_LIST
   /* Index names in a "... JOIN ... USE/IGNORE INDEX ..." clause. */
   List<Index_hint> *index_hints;
   TABLE        *table;                          /* opened table */
-  uint          table_id; /* table id (from binlog) for opened table */
+  ulong         table_id; /* table id (from binlog) for opened table */
   /*
     select_result for derived table to pass it from table creation to table
     filling procedure
@@ -1973,6 +1973,8 @@ typedef struct st_open_table_list{
   char	*db,*table;
   uint32 in_use,locked;
 } OPEN_TABLE_LIST;
+
+
 
 
 static inline my_bitmap_map *tmp_use_all_columns(TABLE *table,

@@ -89,7 +89,7 @@ buf_read_page_low(
 	wake_later = mode & OS_AIO_SIMULATED_WAKE_LATER;
 	mode = mode & ~OS_AIO_SIMULATED_WAKE_LATER;
 
-	if (trx_doublewrite && space == TRX_SYS_SPACE
+	if (trx_doublewrite && space == TRX_SYS_SPACE                           /* 尝试读doublewrite页面，则输出错误日志 */
 	    && (   (offset >= trx_doublewrite->block1
 		    && offset < trx_doublewrite->block1
 		    + TRX_SYS_DOUBLEWRITE_BLOCK_SIZE)
@@ -106,7 +106,7 @@ buf_read_page_low(
 	}
 
 	if (ibuf_bitmap_page(zip_size, offset)
-	    || trx_sys_hdr_page(space, offset)) {
+	    || trx_sys_hdr_page(space, offset)) {                               /* 如果是第5页或ibuf_bitmap页需要同步读 */
 
 		/* Trx sys header is so low in the latching order that we play
 		safe and do not leave the i/o-completion to an asynchronous
@@ -123,7 +123,7 @@ buf_read_page_low(
 	completed */
 	bpage = buf_page_init_for_read(err, mode, space, zip_size, unzip,
 				       tablespace_version, offset);
-	if (bpage == NULL) {
+	if (bpage == NULL) {                                                    /* 若为NULL并且err为空，表示页面已在缓冲区中 */
 
 		return(0);
 	}
@@ -139,7 +139,7 @@ buf_read_page_low(
 
 	ut_ad(buf_page_in_file(bpage));
 
-	thd_wait_begin(NULL, THD_WAIT_DISKIO);
+	thd_wait_begin(NULL, THD_WAIT_DISKIO);                                  /* 真正IO，同步或异步 */
 	if (zip_size) {
 		*err = fil_io(OS_FILE_READ | wake_later,
 			      sync, space, zip_size, offset, 0, zip_size,
@@ -157,7 +157,7 @@ buf_read_page_low(
 	if (sync) {
 		/* The i/o is already completed when we arrive from
 		fil_read */
-		buf_page_io_complete(bpage);
+		buf_page_io_complete(bpage);                                        /* 若为同步IO，IO已经结束，调用此函数（函数并不实现等待） */
 	}
 
 	return(1);

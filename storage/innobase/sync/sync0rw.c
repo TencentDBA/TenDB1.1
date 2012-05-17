@@ -426,7 +426,7 @@ lock_loop:
 		rw_s_spin_round_count += i;
 
 		sync_array_reserve_cell(sync_primary_wait_array,
-					lock, RW_LOCK_SHARED,
+					lock, RW_LOCK_SHARED,                               /* 等待X锁释放 */
 					file_name, line,
 					&index);
 
@@ -501,7 +501,7 @@ rw_lock_x_lock_wait(
 	ut_ad(lock->lock_word <= 0);
 
 	while (lock->lock_word < 0) {
-		if (srv_spin_wait_delay) {
+		if (srv_spin_wait_delay) {                                      /* spin一段时间 */
 			ut_delay(ut_rnd_interval(0, srv_spin_wait_delay));
 		}
 		if(i < SYNC_SPIN_ROUNDS) {
@@ -512,9 +512,9 @@ rw_lock_x_lock_wait(
 		/* If there is still a reader, then go to sleep.*/
 		rw_x_spin_round_count += i;
 		i = 0;
-		sync_array_reserve_cell(sync_primary_wait_array,
+		sync_array_reserve_cell(sync_primary_wait_array,                /* 分配一个等待cell */
 					lock,
-					RW_LOCK_WAIT_EX,
+					RW_LOCK_WAIT_EX,                                    /* 等待所有S锁释放 */
 					file_name, line,
 					&index);
 		/* Check lock_word to ensure wake-up isn't missed.*/
@@ -532,7 +532,7 @@ rw_lock_x_lock_wait(
 					       file_name, line);
 #endif
 
-			sync_array_wait_event(sync_primary_wait_array,
+			sync_array_wait_event(sync_primary_wait_array,              /* 等待S锁释放 */
 					      index);
 #ifdef UNIV_SYNC_DEBUG
 			rw_lock_remove_debug_info(lock, pass,
@@ -541,7 +541,7 @@ rw_lock_x_lock_wait(
                         /* It is possible to wake when lock_word < 0.
                         We must pass the while-loop check to proceed.*/
 		} else {
-			sync_array_free_cell(sync_primary_wait_array,
+			sync_array_free_cell(sync_primary_wait_array,               /* 等待S锁已释放 */
 					     index);
 		}
 	}
@@ -563,7 +563,7 @@ rw_lock_x_lock_low(
 {
 	os_thread_id_t	curr_thread	= os_thread_get_curr_id();
 
-	if (rw_lock_lock_word_decr(lock, X_LOCK_DECR)) {
+	if (rw_lock_lock_word_decr(lock, X_LOCK_DECR)) {                    /* 尝试上X锁 */
 
 		/* lock->recursive also tells us if the writer_thread
 		field is stale or active. As we are going to write
@@ -572,10 +572,10 @@ rw_lock_x_lock_low(
 		ut_a(!lock->recursive);
 
 		/* Decrement occurred: we are writer or next-writer. */
-		rw_lock_set_writer_id_and_recursion_flag(lock,
+		rw_lock_set_writer_id_and_recursion_flag(lock,                  
 						pass ? FALSE : TRUE);
 
-		rw_lock_x_lock_wait(lock,
+		rw_lock_x_lock_wait(lock,                                       /* 等待S锁释放（不可能死锁？） */
 #ifdef UNIV_SYNC_DEBUG
 				    pass,
 #endif
@@ -584,7 +584,7 @@ rw_lock_x_lock_low(
 	} else {
 		/* Decrement failed: relock or failed lock */
 		if (!pass && lock->recursive
-		    && os_thread_eq(lock->writer_thread, curr_thread)) {
+		    && os_thread_eq(lock->writer_thread, curr_thread)) {        /* pass=0 ，且上一次上锁的pass也为0 重复上锁，需要解锁两次！（只可能X+X） */
 			/* Relock */
                         lock->lock_word -= X_LOCK_DECR;
 		} else {
@@ -634,34 +634,35 @@ rw_lock_x_lock_func(
 
 lock_loop:
 
-	if (rw_lock_x_lock_low(lock, pass, file_name, line)) {
+	if (rw_lock_x_lock_low(lock, pass, file_name, line)) {      /* 尝试上X锁，成功则返回 */
 		rw_x_spin_round_count += i;
 
 		return;	/* Locking succeeded */
 
-	} else {
+    } else {
 
-                if (!spinning) {
-                        spinning = TRUE;
-                        rw_x_spin_wait_count++;
-		}
+        if (!spinning) {
+            spinning = TRUE;
+            rw_x_spin_wait_count++;
+        }
 
-		/* Spin waiting for the lock_word to become free */
-		while (i < SYNC_SPIN_ROUNDS
-		       && lock->lock_word <= 0) {
-			if (srv_spin_wait_delay) {
-				ut_delay(ut_rnd_interval(0,
-							 srv_spin_wait_delay));
-			}
+        /* Spin waiting for the lock_word to become free */
+        while (i < SYNC_SPIN_ROUNDS                             
+            && lock->lock_word <= 0)  {                         /* spin一段时间，两个参数spin_wait_delay和sync_spin_loops */
 
-			i++;
-		}
-		if (i == SYNC_SPIN_ROUNDS) {
-			os_thread_yield();
-		} else {
-			goto lock_loop;
-		}
-	}
+            if (srv_spin_wait_delay) {
+                ut_delay(ut_rnd_interval(0,
+                    srv_spin_wait_delay));
+            }
+
+            i++;
+        }
+        if (i == SYNC_SPIN_ROUNDS) {
+            os_thread_yield();
+        } else {
+            goto lock_loop;
+        }
+    }
 
 	rw_x_spin_round_count += i;
 
@@ -674,9 +675,9 @@ lock_loop:
 			(ulong) lock->cline, (ulong) i);
 	}
 
-	sync_array_reserve_cell(sync_primary_wait_array,
+	sync_array_reserve_cell(sync_primary_wait_array,        /* 在全局同步数组中分配一个等待cell，数组大小是参数srv_max_n_threads */
 				lock,
-				RW_LOCK_EX,
+				RW_LOCK_EX,                                 /* 等待X锁释放 */
 				file_name, line,
 				&index);
 
@@ -702,7 +703,7 @@ lock_loop:
 	lock->count_os_wait++;
 	rw_x_os_wait_count++;
 
-	sync_array_wait_event(sync_primary_wait_array, index);
+	sync_array_wait_event(sync_primary_wait_array, index);/* 等待通知，然后重新尝试上锁 */
 
 	i = 0;
 	goto lock_loop;

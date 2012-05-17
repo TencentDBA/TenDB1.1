@@ -54,6 +54,45 @@ typedef struct st_innobase_share {
 						Innodb */
 } INNOBASE_SHARE;
 
+/*****************************************************************//**
+Normalizes a table name string. A normalized name consists of the
+database name catenated to '/' and table name. An example:
+test/mytable. On Windows normalization puts both the database name and the
+table name always to lower case if "set_lower_case" is set to TRUE. */
+void
+normalize_table_name_low(
+/*=====================*/
+	char*		norm_name,	/*!< out: normalized name as a
+					null-terminated string */
+	const char*	name,		/*!< in: table name string */
+	ibool		set_lower_case); /*!< in: TRUE if we want to set
+					name to lower case */
+
+/** Always normalize table name to lower case on Windows */
+#ifdef __WIN__
+#define normalize_table_name(norm_name, name)		\
+    normalize_table_name_low(norm_name, name, TRUE)
+#else
+#define normalize_table_name(norm_name, name)           \
+    normalize_table_name_low(norm_name, name, FALSE)
+#endif /* __WIN__ */
+
+/*********************************************************************//**
+Gets the InnoDB transaction handle for a MySQL handler object, creates
+an InnoDB transaction struct if the corresponding MySQL thread struct still
+lacks one.
+@return	InnoDB transaction handle */
+trx_t*
+check_trx_exists(
+/*=============*/
+	THD*	thd);	/*!< in: user thread handle */
+
+
+enum innodb_row_format_change {
+    INNODB_ROW_FORMAT_CHANGE_NO,
+    INNODB_ROW_FORMAT_GCS_TO_COMPACT,
+    INNODB_ROW_FORMAT_COMACT_TO_GCS
+};
 
 /** InnoDB B-tree index */
 struct dict_index_struct;
@@ -121,6 +160,9 @@ class ha_innobase: public handler
 	  ROW_TYPE_NOT_USED, the information in HA_CREATE_INFO should be used.
 	*/
 	enum row_type get_row_type() const;
+    const char* get_row_type_str_for_gcs() const;
+
+    bool get_if_row_fast_altered();
 
 	const char* table_type() const;
 	const char* index_type(uint key_number);
@@ -223,8 +265,38 @@ class ha_innobase: public handler
 			       uint num_of_keys);
 	int final_drop_index(TABLE *table_arg);
 	/** @} */
+
+    bool
+    check_if_supported_inplace_alter(
+        /*==========================================*/
+        THD                     *thd,
+        TABLE                   *table,
+        Alter_inplace_info      *inplace_info
+    );
+	
+	/* check if support fast row_format check*/
+	enum innodb_row_format_change is_support_fast_rowformat_change(
+	  enum row_type new_type,
+	  enum row_type old_type
+	  );
+
+	/* fast alter table for innodb table */
+	int inplace_alter_table(
+		TABLE*			altered_table,
+        TABLE*          tmp_table,
+		Alter_inplace_info*	ha_alter_info,
+        const char*	    table_name);
+
+    /* do some roll back when inplace alter table failed */
+    int final_inplace_alter_table(
+        TABLE                *altered_table,
+        TABLE               *tmp_table,
+        Alter_inplace_info  *ha_alter_info,
+        const char*         table_name,
+        bool                commit);
+
 	bool check_if_incompatible_data(HA_CREATE_INFO *info,
-					uint table_changes);
+					uint table_changes);   
 };
 
 /* Some accessor functions which the InnoDB plugin needs, but which

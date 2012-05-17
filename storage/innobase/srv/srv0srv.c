@@ -121,6 +121,13 @@ dictionary tables are in the system tablespace 0 */
 UNIV_INTERN my_bool	srv_file_per_table;
 /** The file format to use on new *.ibd files. */
 UNIV_INTERN ulint	srv_file_format = 0;
+
+/* whether gcs is the default row format */
+UNIV_INTERN ibool	srv_is_gcs_default = 1;
+
+/* whether create gcs table use gcs real format */
+UNIV_INTERN my_bool	srv_create_use_gcs_real_format = FALSE;
+
 /** Whether to check file format during startup.  A value of
 DICT_TF_FORMAT_MAX + 1 means no checking ie. FALSE.  The default is to
 set it to the highest format we support. */
@@ -2779,11 +2786,11 @@ loop:
 
 		srv_main_thread_op_info = "doing background drop tables";
 
-		row_drop_tables_for_mysql_in_background();
+		row_drop_tables_for_mysql_in_background();                                          /* ?? */
 
 		srv_main_thread_op_info = "";
 
-		if (srv_fast_shutdown && srv_shutdown_state > 0) {
+		if (srv_fast_shutdown && srv_shutdown_state > 0) {                                  /* 如果正在关闭系统个，并且是fast_shutdown */
 
 			goto background_loop;
 		}
@@ -2797,7 +2804,7 @@ loop:
 		srv_main_1_second_loops++;
 
 		if (next_itr_time > cur_time
-		    && srv_shutdown_state == SRV_SHUTDOWN_NONE) {
+		    && srv_shutdown_state == SRV_SHUTDOWN_NONE) {                                   /* 保证一秒一次 */
 
 			/* Get sleep interval in micro seconds. We use
 			ut_min() to avoid long sleep in case of
@@ -2812,10 +2819,10 @@ loop:
 		next_itr_time = ut_time_ms() + 1000;
 
 		/* Flush logs if needed */
-		srv_sync_log_buffer_in_background();
+		srv_sync_log_buffer_in_background();                                                /* log buf异步刷盘 */
 
 		srv_main_thread_op_info = "making checkpoint";
-		log_free_check();
+		log_free_check();                                                                   /* 计算脏页年龄，执行checkpoint */
 
 		/* If i/os during one second sleep were less than 5% of
 		capacity, we assume that there is free disk i/o capacity
