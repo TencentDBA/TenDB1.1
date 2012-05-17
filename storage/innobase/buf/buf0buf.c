@@ -297,7 +297,7 @@ be effective only if PFS_GROUP_BUFFER_SYNC is defined. */
 /** A chunk of buffers.  The buffer pool is allocated in chunks. */
 struct buf_chunk_struct{
 	ulint		mem_size;	/*!< allocated size of the chunk */
-	ulint		size;		/*!< size of frames[] and blocks[] */
+	ulint		size;		/*!< size of frames[] and blocks[] */           /* frames页面数（每页16k） */
 	void*		mem;		/*!< pointer to the memory area which
 					was allocated for the frames */
 	buf_block_t*	blocks;		/*!< array of buffer control blocks */
@@ -2251,7 +2251,7 @@ buf_page_get_gen(
 			       FALSE, file, line, NULL));
 #endif
 	buf_pool->stat.n_page_gets++;
-	fold = buf_page_address_fold(space, offset);
+	fold = buf_page_address_fold(space, offset);                /* 计算页面的fold值 */
 loop:
 	block = guess;
 	buf_pool_mutex_enter(buf_pool);
@@ -2274,7 +2274,7 @@ loop:
 	}
 
 	if (block == NULL) {
-		block = (buf_block_t*) buf_page_hash_get_low(
+		block = (buf_block_t*) buf_page_hash_get_low(                   /* 通过fold在hash表中查找页面 */
 			buf_pool, space, offset, fold);
 	}
 
@@ -2286,8 +2286,8 @@ loop2:
 	if (block == NULL) {
 		/* Page not in buf_pool: needs to be read from file */
 
-		if (mode == BUF_GET_IF_IN_POOL_OR_WATCH) {
-			block = (buf_block_t*) buf_pool_watch_set(
+		if (mode == BUF_GET_IF_IN_POOL_OR_WATCH) {                  
+			block = (buf_block_t*) buf_pool_watch_set(                  /* 不在pool中就是设置watch页（待研究） */
 				space, offset, fold);
 
 			if (UNIV_LIKELY_NULL(block)) {
@@ -2305,12 +2305,12 @@ loop2:
 			return(NULL);
 		}
 
-		if (buf_read_page(space, zip_size, offset)) {
+		if (buf_read_page(space, zip_size, offset)) {                   /* 在文件中读取页面到hash表中 */
 			buf_read_ahead_random(space, zip_size, offset,
 					      ibuf_inside(mtr));
 
 			retries = 0;
-		} else if (retries < BUF_PAGE_READ_MAX_RETRIES) {
+		} else if (retries < BUF_PAGE_READ_MAX_RETRIES) {               /* 若失败重试100次 */
 			++retries;
 		} else {
 			fprintf(stderr, "InnoDB: Error: Unable"
@@ -2344,7 +2344,7 @@ got_block:
 	must_read = buf_block_get_io_fix(block) == BUF_IO_READ;
 
 	if (must_read && (mode == BUF_GET_IF_IN_POOL
-			  || mode == BUF_PEEK_IF_IN_POOL)) {
+			  || mode == BUF_PEEK_IF_IN_POOL)) {                        /* 此页面正在读，若只是读取pool的页面，不等待返回NULL */
 
 		/* The page is being read to buffer pool,
 		but we cannot wait around for the read to
@@ -2361,7 +2361,7 @@ got_block:
 	case BUF_BLOCK_FILE_PAGE:
 		break;
 
-	case BUF_BLOCK_ZIP_PAGE:
+	case BUF_BLOCK_ZIP_PAGE:                                            /* ZIP_PAGE和ZIP_DIRTY特殊处理（待研究） */
 	case BUF_BLOCK_ZIP_DIRTY:
 		bpage = &block->page;
 		/* Protect bpage->buf_fix_count. */
@@ -2513,7 +2513,7 @@ wait_until_unfixed:
 	UNIV_MEM_ASSERT_RW(&block->page, sizeof block->page);
 #endif
 #if defined UNIV_DEBUG || defined UNIV_IBUF_DEBUG
-	if ((mode == BUF_GET_IF_IN_POOL || mode == BUF_GET_IF_IN_POOL_OR_WATCH)
+	if ((mode == BUF_GET_IF_IN_POOL || mode == BUF_GET_IF_IN_POOL_OR_WATCH)         /* 应该只有debug才使用这段代码，并且ibuf_debug是一个debug模式下的启动参数change_buffering_debug（貌似意思是在普通buffer中的ibuf页面一到insert buffer缓冲区中） */
 	    && ibuf_debug) {
 		/* Try to evict the block from the buffer pool, to use the
 		insert buffer (change buffer) as much as possible. */
@@ -2552,7 +2552,7 @@ wait_until_unfixed:
 	}
 #endif /* UNIV_DEBUG || UNIV_IBUF_DEBUG */
 
-	buf_block_buf_fix_inc(block, file, line);
+	buf_block_buf_fix_inc(block, file, line);                                   /* buf_fix_count非0表示正在被mtr使用 */
 #if defined UNIV_DEBUG_FILE_ACCESSES || defined UNIV_DEBUG
 	ut_a(mode == BUF_GET_POSSIBLY_FREED
 	     || !block->page.file_page_was_freed);
@@ -2614,7 +2614,7 @@ wait_until_unfixed:
 		break;
 	}
 
-	mtr_memo_push(mtr, block, fix_type);
+	mtr_memo_push(mtr, block, fix_type);                                         /* 记录上锁信息 */
 
 	if (UNIV_LIKELY(mode != BUF_PEEK_IF_IN_POOL) && !access_time) {
 		/* In the case of a first access, try to apply linear
@@ -3095,23 +3095,23 @@ buf_page_init_for_read(
 	    && UNIV_LIKELY(!recv_recovery_is_on())) {
 		block = NULL;
 	} else {
-		block = buf_LRU_get_free_block(buf_pool);
+		block = buf_LRU_get_free_block(buf_pool);                               /* 从空闲链表中获得一个空闲block */
 		ut_ad(block);
 		ut_ad(buf_pool_from_block(block) == buf_pool);
 	}
 
-	fold = buf_page_address_fold(space, offset);
+	fold = buf_page_address_fold(space, offset);                                /* 计算页面fold值 */
 
 	buf_pool_mutex_enter(buf_pool);
 
-	watch_page = buf_page_hash_get_low(buf_pool, space, offset, fold);
-	if (watch_page && !buf_pool_watch_is_sentinel(buf_pool, watch_page)) {
+	watch_page = buf_page_hash_get_low(buf_pool, space, offset, fold);          
+	if (watch_page && !buf_pool_watch_is_sentinel(buf_pool, watch_page)) {      /* 如果页面已在buffer中，返回NULL */
 		/* The page is already in the buffer pool. */
 		watch_page = NULL;
 err_exit:
 		if (block) {
 			mutex_enter(&block->mutex);
-			buf_LRU_block_free_non_file_page(block);
+			buf_LRU_block_free_non_file_page(block);                            /* block重新放回空闲链表中 */
 			mutex_exit(&block->mutex);
 		}
 
@@ -3119,7 +3119,7 @@ err_exit:
 		goto func_exit;
 	}
 
-	if (fil_tablespace_deleted_or_being_deleted_in_mem(
+	if (fil_tablespace_deleted_or_being_deleted_in_mem(                         /* 如果表空间已删除或正在删除，则报错 */
 		    space, tablespace_version)) {
 		/* The page belongs to a space which has been
 		deleted or is being deleted. */
@@ -3128,16 +3128,16 @@ err_exit:
 		goto err_exit;
 	}
 
-	if (block) {
+	if (block) {                                                        /* 非zip页 */
 		bpage = &block->page;
 		mutex_enter(&block->mutex);
 
 		ut_ad(buf_pool_from_bpage(bpage) == buf_pool);
 
-		buf_page_init(buf_pool, space, offset, fold, block);
+		buf_page_init(buf_pool, space, offset, fold, block);                    /* 初始化blok内存结构 */
 
 		/* The block must be put to the LRU list, to the old blocks */
-		buf_LRU_add_block(bpage, TRUE/* to old blocks */);
+		buf_LRU_add_block(bpage, TRUE/* to old blocks */);                      /* 加入到LRU链表中 */
 
 		/* We set a pass-type x-lock on the frame because then
 		the same thread which called for the read operation
@@ -3148,7 +3148,7 @@ err_exit:
 		read is completed.  The x-lock is cleared by the
 		io-handler thread. */
 
-		rw_lock_x_lock_gen(&block->lock, BUF_IO_READ);
+		rw_lock_x_lock_gen(&block->lock, BUF_IO_READ);                          /* 上X锁，通常buf_page_io_complete时候释放？ */
 		buf_page_set_io_fix(bpage, BUF_IO_READ);
 
 		if (UNIV_UNLIKELY(zip_size)) {
@@ -3177,7 +3177,7 @@ err_exit:
 		}
 
 		mutex_exit(&block->mutex);
-	} else {
+	} else {                                                                    /* zip页 */
 		/* The compressed page must be allocated before the
 		control block (bpage), in order to avoid the
 		invocation of buf_buddy_relocate_block() on
@@ -3555,7 +3555,7 @@ buf_page_io_complete(
 		to the 4 first bytes of the page end lsn field */
 
 		if (buf_page_is_corrupted(frame,
-					  buf_page_get_zip_size(bpage))) {
+					  buf_page_get_zip_size(bpage))) {                  /* 不可能是corrupted页，因为恢复时已将doublewrite页面还原？！ */
 corrupt:
 			fprintf(stderr,
 				"InnoDB: Database page corruption on disk"
@@ -3610,7 +3610,7 @@ corrupt:
 			}
 		}
 
-		if (recv_recovery_is_on()) {
+		if (recv_recovery_is_on()) {                                                /* 可能执行恢复 */
 			/* Pages must be uncompressed for crash recovery. */
 			ut_a(uncompressed);
 			recv_recover_page(TRUE, (buf_block_t*) bpage);
@@ -3653,7 +3653,7 @@ corrupt:
 		buf_pool->stat.n_pages_read++;
 
 		if (uncompressed) {
-			rw_lock_x_unlock_gen(&((buf_block_t*) bpage)->lock,
+			rw_lock_x_unlock_gen(&((buf_block_t*) bpage)->lock,                     /* 锁释放，对应buf_page_init_for_read */
 					     BUF_IO_READ);
 		}
 

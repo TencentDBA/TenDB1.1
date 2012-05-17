@@ -1883,7 +1883,7 @@ btr_cur_update_in_place(
 	}
 
 	was_delete_marked = rec_get_deleted_flag(
-		rec, page_is_comp(buf_block_get_frame(block)));
+		rec, page_is_comp(buf_block_get_frame(block)));             /* 更新插入 */
 
 	is_hashed = (block->index != NULL);
 
@@ -2042,7 +2042,7 @@ any_extern:
 	corresponding to new_entry is latched in mtr.
 	Thus the following call is safe. */
 	row_upd_index_replace_new_col_vals_index_pos(new_entry, index, update,
-						     FALSE, heap);
+						     FALSE, heap);                                              /* 得到新的entry */
 	old_rec_size = rec_offs_size(offsets);
 	new_rec_size = rec_get_converted_size(index, new_entry, 0);
 
@@ -2059,7 +2059,7 @@ any_extern:
 	}
 
 	if (UNIV_UNLIKELY(new_rec_size
-			  >= (page_get_free_space_of_empty(page_is_comp(page))
+			  >= (page_get_free_space_of_empty(page_is_comp(page))                      /* 新记录太大。。 */
 			      / 2))) {
 
 		err = DB_OVERFLOW;
@@ -2068,7 +2068,7 @@ any_extern:
 
 	if (UNIV_UNLIKELY(page_get_data_size(page)
 			  - old_rec_size + new_rec_size
-			  < BTR_CUR_PAGE_COMPRESS_LIMIT)) {
+			  < BTR_CUR_PAGE_COMPRESS_LIMIT)) {                                         /* 更新后，页面使用空间太小，可能页面合并 */
 
 		/* The page would become too empty */
 
@@ -2077,11 +2077,11 @@ any_extern:
 	}
 
 	max_size = old_rec_size
-		+ page_get_max_insert_size_after_reorganize(page, 1);
+		+ page_get_max_insert_size_after_reorganize(page, 1);                           /* 计算最大可用空间 */
 
 	if (!(((max_size >= BTR_CUR_PAGE_REORGANIZE_LIMIT)
 	       && (max_size >= new_rec_size))
-	      || (page_get_n_recs(page) <= 1))) {
+	      || (page_get_n_recs(page) <= 1))) {                                           /* 最大可用空间不够 */
 
 		/* There was not enough space, or it did not pay to
 		reorganize: for simplicity, we decide what to do assuming a
@@ -2105,7 +2105,7 @@ any_extern:
 
 	lock_rec_store_on_page_infimum(block, rec);
 
-	btr_search_update_hash_on_delete(cursor);
+	btr_search_update_hash_on_delete(cursor);                                           /* 哈希索引？！ */
 
 	/* The call to row_rec_to_index_entry(ROW_COPY_DATA, ...) above
 	invokes rec_offs_make_valid() to point to the copied record that
@@ -2113,9 +2113,9 @@ any_extern:
 	ut_ad(rec_offs_validate(NULL, index, offsets));
 	rec_offs_make_valid(page_cur_get_rec(page_cursor), index, offsets);
 
-	page_cur_delete_rec(page_cursor, index, offsets, mtr);
+	page_cur_delete_rec(page_cursor, index, offsets, mtr);                              /* 真正删除该记录，并且page_cursor已发生变化，指向原删除记录的下一条记录 */
 
-	page_cur_move_to_prev(page_cursor);
+	page_cur_move_to_prev(page_cursor);                                                 /* 指向上一条记录，插入位置 */
 
 	trx = thr_get_trx(thr);
 
@@ -2127,7 +2127,7 @@ any_extern:
 	}
 
 	/* There are no externally stored columns in new_entry */
-	rec = btr_cur_insert_if_possible(cursor, new_entry, 0/*n_ext*/, mtr);
+	rec = btr_cur_insert_if_possible(cursor, new_entry, 0/*n_ext*/, mtr);               /* 插入记录，可能页面重组 */
 	ut_a(rec); /* <- We calculated above the insert would fit */
 
 	if (page_zip && !dict_index_is_clust(index)
@@ -2140,7 +2140,7 @@ any_extern:
 
 	lock_rec_restore_from_page_infimum(block, rec, block);
 
-	page_cur_move_to_next(page_cursor);
+	page_cur_move_to_next(page_cursor);                                                 /* 移向当前记录 */
 
 	err = DB_SUCCESS;
 err_exit:
@@ -2412,7 +2412,7 @@ make_external:
 		offsets = rec_get_offsets(rec, index, offsets,
 					  ULINT_UNDEFINED, heap);
 
-		if (!rec_get_deleted_flag(rec, rec_offs_comp(offsets))) {
+		if (!rec_get_deleted_flag(rec, rec_offs_comp(offsets))) {                   /* 为什么会打了删除标记？见row_ins_clust_index_entry_by_modify等，即插入准备purge记录相同主键的记录 */
 			/* The new inserted record owns its possible externally
 			stored fields */
 			btr_cur_unmark_extern_fields(page_zip,

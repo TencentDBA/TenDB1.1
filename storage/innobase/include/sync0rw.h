@@ -607,8 +607,8 @@ struct rw_lock_struct {
 				/*!< Thread id of writer thread. Is only
 				guaranteed to have sane and non-stale
 				value iff recursive flag is set. */
-	os_event_t	event;	/*!< Used by sync0arr.c for thread queueing */
-	os_event_t	wait_ex_event;
+	os_event_t	event;	/*!< Used by sync0arr.c for thread queueing */              /* X锁释放用，X锁释放通知 */
+	os_event_t	wait_ex_event;                                                      /* X上锁等待S锁释放，S锁释放通知 */
 				/*!< Event for next-writer to wait on. A thread
 				must decrement lock_word before waiting. */
 #ifndef INNODB_RW_LOCKS_USE_ATOMICS

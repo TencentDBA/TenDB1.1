@@ -708,7 +708,7 @@ need_extra_info:
 		/* Write the record end segment length
 		and the extra info storage flag */
 		log_ptr += mach_write_compressed(log_ptr,
-						 2 * (rec_size - i) + 1);
+						 2 * (rec_size - i) + 1);           /* 加1是为了与else分支区分，一个是奇数，一个是偶数！！*/
 
 		/* Write the info bits */
 		mach_write_to_1(log_ptr,
@@ -818,7 +818,7 @@ page_cur_parse_insert_rec(
 		return(NULL);
 	}
 
-	if (end_seg_len & 0x1UL) {
+	if (end_seg_len & 0x1UL) {                      /* 若为奇数！ */
 		/* Read the info bits */
 
 		if (end_ptr < ptr + 1) {

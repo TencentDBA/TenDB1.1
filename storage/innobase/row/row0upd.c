@@ -1869,7 +1869,7 @@ err_exit:
 
 		if (rec_offs_any_extern(offsets)) {
 			change_ownership = row_upd_clust_rec_by_insert_inherit(
-				rec, offsets, entry, node->update);
+				rec, offsets, entry, node->update);                                 /* 判断是否存在未更新的行外字段，若有则更新upd_row内存tupule中的继承拥有标记（BTR_EXTERN_INHERITED_FLAG） */
 
 			if (change_ownership) {
 				btr_pcur_store_position(pcur, mtr);
@@ -1896,7 +1896,7 @@ err_exit:
 				  TRUE, thr);
 	node->state = change_ownership
 		? UPD_NODE_INSERT_BLOB
-		: UPD_NODE_INSERT_CLUSTERED;
+		: UPD_NODE_INSERT_CLUSTERED;                /* 如果插入成功，这几个状态都没用了，会被覆盖。否则可能因为上锁失败而继续这两个状态的操作 */
 
 	if (err == DB_SUCCESS && change_ownership) {
 		/* Mark the non-updated fields disowned by the old record. */
@@ -1922,7 +1922,7 @@ err_exit:
 
 		btr_cur_disown_inherited_fields(
 			btr_cur_get_page_zip(btr_cur),
-			rec, index, offsets, node->update, mtr);
+			rec, index, offsets, node->update, mtr);                    /* 原记录不再拥有未更新的行外字段 */
 
 		mtr_commit(mtr);
 	}

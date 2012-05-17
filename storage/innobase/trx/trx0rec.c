@@ -363,7 +363,7 @@ trx_undo_rec_get_col_val(
 	default:
 		*field = ptr;
 		if (*len >= UNIV_EXTERN_STORAGE_FIELD) {
-			ptr += *len - UNIV_EXTERN_STORAGE_FIELD;
+			ptr += *len - UNIV_EXTERN_STORAGE_FIELD;            /* 行外存储，但长度大于前缀索引键最大长度！见trx_undo_page_report_modify_ext */
 		} else {
 			ptr += *len;
 		}
@@ -587,7 +587,7 @@ trx_undo_page_report_modify(
 
 	if (!update) {
 		type_cmpl = TRX_UNDO_DEL_MARK_REC;
-	} else if (rec_get_deleted_flag(rec, dict_table_is_comp(table))) {
+	} else if (rec_get_deleted_flag(rec, dict_table_is_comp(table))) {      /* 什么时候会发生呢？参考row_ins_clust_index_entry_by_modify */
 		type_cmpl = TRX_UNDO_UPD_DEL_REC;
 		/* We are about to update a delete marked record.
 		We don't typically need the prefix in this case unless
@@ -624,7 +624,7 @@ trx_undo_page_report_modify(
 	by some other trx as it must have committed by now for us to
 	allow an over-write. */
 	if (ignore_prefix) {
-		ignore_prefix = (trx_id != trx->id);
+		ignore_prefix = (trx_id != trx->id);                    /* 同一事务：插入、删除、再插入主键相同的记录（由于之前的删除purge无效了，需要依赖这次插入来完成之前的purge，所以需要保存前缀）；不同事务：插入与准备purge主键相同的记录，因为此purge不需执行了，所以不保存前缀？ */
 	}
 	ptr += mach_ull_write_compressed(ptr, trx_id);
 
@@ -751,7 +751,7 @@ trx_undo_page_report_modify(
 	clustered index. This works also in crash recovery, because all pages
 	(including BLOBs) are recovered before anything is rolled back. */
 
-	if (!update || !(cmpl_info & UPD_NODE_NO_ORD_CHANGE)) {
+	if (!update || !(cmpl_info & UPD_NODE_NO_ORD_CHANGE)) {                 /* 存储索引键，用于purge */
 		byte*	old_ptr = ptr;
 
 		trx->update_undo->del_marks = TRUE;
@@ -789,7 +789,7 @@ trx_undo_page_report_modify(
 				field = rec_get_nth_field(rec, offsets, pos,
 							  &flen);
 
-				if (rec_offs_nth_extern(offsets, pos)) {
+				if (rec_offs_nth_extern(offsets, pos)) {                /* 前缀索引列？ */
 					const dict_col_t*	col =
 						dict_index_get_nth_col(
 							index, pos);
@@ -1302,7 +1302,7 @@ trx_undo_report_row_operation(
 			version the replicate page constructed using the log
 			records stays identical to the original page */
 
-			if (!trx_undo_erase_page_end(undo_page, &mtr)) {
+			if (!trx_undo_erase_page_end(undo_page, &mtr)) {                        /* 一个空的undo页都无法满足undo记录的需要！ */
 				/* The record did not fit on an empty
 				undo page. Discard the freshly allocated
 				page and return an error. */

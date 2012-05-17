@@ -1095,7 +1095,7 @@ err_len:
 		return("SYS_FIELDS.POS mismatch");
 	}
 
-	if (first_field || pos_and_prefix_len > 0xFFFFUL) {
+	if (first_field || pos_and_prefix_len > 0xFFFFUL) {             /* 对于第0列来说，position可能是0，所以对first_field做特殊处理 */
 		prefix_len = pos_and_prefix_len & 0xFFFFUL;
 		position = (pos_and_prefix_len & 0xFFFF0000UL)  >> 16;
 	} else {

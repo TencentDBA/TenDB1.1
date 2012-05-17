@@ -1421,7 +1421,7 @@ btr_create(
 		buf_block_dbg_add_level(block, SYNC_TREE_NODE_NEW);
 
 		if (!fseg_create(space, page_no,
-				 PAGE_HEADER + PAGE_BTR_SEG_LEAF, mtr)) {
+				 PAGE_HEADER + PAGE_BTR_SEG_LEAF, mtr)) {                           /* 根据根页建立叶子节点段 */
 			/* Not enough space for new segment, free root
 			segment before return. */
 			btr_free_root(space, zip_size, page_no, mtr);
@@ -1435,7 +1435,7 @@ btr_create(
 	}
 
 	/* Create a new index page on the allocated segment page */
-	page_zip = buf_block_get_page_zip(block);
+	page_zip = buf_block_get_page_zip(block);                                       /* 初始化根页 */
 
 	if (UNIV_LIKELY_NULL(page_zip)) {
 		page = page_create_zip(block, index, 0, mtr);
@@ -2691,7 +2691,7 @@ insert_empty:
 			the original page.  Copy the page byte for byte
 			and then delete the records from both pages
 			as appropriate.  Deleting will always succeed. */
-			ut_a(new_page_zip);
+			ut_a(new_page_zip);                                                             /* 只有压缩页面才可能失败！ */
 
 			page_zip_copy_recs(new_page_zip, new_page,
 					   page_zip, page, cursor->index, mtr);
@@ -2734,7 +2734,7 @@ insert_empty:
 			the original page.  Copy the page byte for byte
 			and then delete the records from both pages
 			as appropriate.  Deleting will always succeed. */
-			ut_a(new_page_zip);
+			ut_a(new_page_zip);                                                 /* 只有压缩页面才可能失败！ */
 
 			page_zip_copy_recs(new_page_zip, new_page,
 					   page_zip, page, cursor->index, mtr);

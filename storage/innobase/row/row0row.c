@@ -323,7 +323,7 @@ row_build(
 		column. No cache is needed. */
 		ut_ad(dict_table_get_format(index->table)
 		      < DICT_TF_FORMAT_ZIP);
-	} else if (j) {
+	} else if (j) {                                                                 /* 对于dynamic和compressed，获得最大索引前缀的内容 */
 		*ext = row_ext_create(j, ext_cols, index->table->flags, row,
 				      heap);
 	} else {

@@ -360,7 +360,7 @@ start_again:
 			ut_ad(rw_lock_get_x_lock_count(&new_block->lock) == 1);
 			page_no = buf_block_get_page_no(new_block);
 
-			if (i == FSP_EXTENT_SIZE / 2) {
+			if (i == FSP_EXTENT_SIZE / 2) {                     /* 这个很奇怪，为什么这里要先偏移32个页面，难道第一个簇后32个页分配给该段？ */
 				ut_a(page_no == FSP_EXTENT_SIZE);
 				mlog_write_ulint(doublewrite
 						 + TRX_SYS_DOUBLEWRITE_BLOCK1,
@@ -902,7 +902,7 @@ trx_sysf_create(
 			    mtr);
 	buf_block_dbg_add_level(block, SYNC_TRX_SYS_HEADER);
 
-	ut_a(buf_block_get_page_no(block) == TRX_SYS_PAGE_NO);
+	ut_a(buf_block_get_page_no(block) == TRX_SYS_PAGE_NO);                      /* 此时能确保分配第5页？ */
 
 	page = buf_block_get_frame(block);
 
