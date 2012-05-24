@@ -3130,6 +3130,12 @@ ha_innobase::get_row_type() const
 	if (prebuilt && prebuilt->table) {
 		const ulint	flags = prebuilt->table->flags;
 
+        /* check if GCS type*/      
+        if(dict_table_is_gcs(prebuilt->table)){
+            return (ROW_TYPE_GCS);
+        }
+
+
 		if (UNIV_UNLIKELY(!flags)) {
 			return(ROW_TYPE_REDUNDANT);
 		}
@@ -7167,12 +7173,12 @@ ha_innobase::create(
 			ER_ILLEGAL_HA_CREATE_OPTION,
 			"InnoDB: assuming ROW_FORMAT=COMPACT.");
 	case ROW_TYPE_DEFAULT:
+    case ROW_TYPE_GCS:                               /* for GCS row_format */
         is_gcs = TRUE;                              /* 默认格式是GCS */
 	case ROW_TYPE_COMPACT:
 		flags = DICT_TF_COMPACT;
 		break;
-    case ROW_TYPE_GCS:   /* for GCS row_format */
-        break;
+
 	}
 
 	/* Look for a primary key */
