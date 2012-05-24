@@ -62,13 +62,15 @@ dict_mem_table_create(
 				ignored if the table is made a member of
 				a cluster */
 	ulint		n_cols,	/*!< in: number of columns */
-	ulint		flags)	/*!< in: table flags */
+	ulint		flags,	/*!< in: table flags */
+    ibool       is_gcs) /*!< in: gcs table flag */
 {
 	dict_table_t*	table;
 	mem_heap_t*	heap;
 
 	ut_ad(name);
 	ut_a(!(flags & (~0 << DICT_TF2_BITS)));
+    ut_ad(!is_gcs || flags & DICT_TF_COMPACT);              /* GCS必须是compact格式 */
 
 	heap = mem_heap_create(DICT_HEAP_SIZE);
 
@@ -92,6 +94,7 @@ dict_mem_table_create(
 		     &table->autoinc_mutex, SYNC_DICT_AUTOINC_MUTEX);
 
 	table->autoinc = 0;
+    table->is_gcs  = is_gcs;
 
 	/* The number of transactions that are either waiting on the
 	AUTOINC lock or have been granted the lock. */

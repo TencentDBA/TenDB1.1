@@ -199,6 +199,14 @@ dict_col_get_sql_null_size(
 	ulint			comp);	/*!< in: nonzero=ROW_FORMAT=COMPACT  */
 
 /*********************************************************************//**
+Gets the column is nullable.
+@return	TRUE if nullable */
+UNIV_INLINE
+ibool
+dict_col_is_nullable(
+/*============*/
+	const dict_col_t*	col);	/*!< in: column */
+/*********************************************************************//**
 Gets the column number.
 @return	col->ind, table column position (starting from 0) */
 UNIV_INLINE
@@ -715,6 +723,13 @@ Check whether the table uses the compact page format.
 UNIV_INLINE
 ibool
 dict_table_is_comp(
+/*===============*/
+	const dict_table_t*	table);	/*!< in: table */
+/********************************************************************//**
+@return	TRUE if table is gcs table */
+UNIV_INLINE
+ibool
+dict_table_is_gcs(
 /*===============*/
 	const dict_table_t*	table);	/*!< in: table */
 /********************************************************************//**

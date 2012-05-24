@@ -371,7 +371,7 @@ row_merge_buf_add(
 
 		size = rec_get_converted_size_comp(index,
 						   REC_STATUS_ORDINARY,
-						   entry, n_fields, &extra);
+						   entry, n_fields, FALSE, &extra);
 
 		ut_ad(data_size + extra_size + REC_N_NEW_EXTRA_BYTES == size);
 		ut_ad(extra_size + REC_N_NEW_EXTRA_BYTES == extra);
@@ -580,7 +580,7 @@ row_merge_buf_write(
 
 		size = rec_get_converted_size_comp(index,
 						   REC_STATUS_ORDINARY,
-						   entry, n_fields,
+						   entry, n_fields,FALSE,
 						   &extra_size);
 		ut_ad(size >= extra_size);
 		ut_ad(extra_size >= REC_N_NEW_EXTRA_BYTES);
@@ -2333,7 +2333,7 @@ row_merge_create_temporary_table(
 	ut_ad(table);
 	ut_ad(mutex_own(&dict_sys->mutex));
 
-	new_table = dict_mem_table_create(table_name, 0, n_cols, table->flags);
+	new_table = dict_mem_table_create(table_name, 0, n_cols, table->flags, table->is_gcs);
 
 	for (i = 0; i < n_cols; i++) {
 		const dict_col_t*	col;

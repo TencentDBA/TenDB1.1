@@ -626,7 +626,7 @@ page_cur_insert_rec_write_log(
 		const byte*	cur_ptr = cursor_rec - cur_extra_size;
 
 		/* Find out the first byte in insert_rec which differs from
-		cursor_rec; skip the bytes in the record info */
+		cursor_rec; skip the bytes in the record info */        /* 从记录头开始，逐字节比较与cursor_rec的第一个不同字节索引，除record fixed extra info外 */
 
 		do {
 			if (*ins_ptr == *cur_ptr) {
@@ -728,7 +728,7 @@ need_extra_info:
 	} else {
 		/* Write the record end segment length
 		and the extra info storage flag */
-		log_ptr += mach_write_compressed(log_ptr, 2 * (rec_size - i));
+		log_ptr += mach_write_compressed(log_ptr, 2 * (rec_size - i));  /* 记录头和总记录长度都相等 */
 	}
 
 	/* Write to the log the inserted index record end segment which
@@ -911,6 +911,11 @@ page_cur_parse_insert_rec(
 	if (page_is_comp(page)) {
 		rec_set_info_and_status_bits(buf + origin_offset,
 				     info_and_status_bits);
+
+        /* 增加断言 */
+        ut_ad (!rec_is_gcs(buf + origin_offset) ||
+                dict_index_is_clust(index) && dict_table_is_gcs(index->table) && 
+                    rec_gcs_get_field_count(buf + origin_offset, NULL) == dict_index_get_n_fields(index));
 	} else {
 		rec_set_info_bits_old(buf + origin_offset,
 							info_and_status_bits);

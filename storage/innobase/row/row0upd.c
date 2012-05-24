@@ -492,7 +492,19 @@ row_upd_rec_in_place(
 	ut_ad(rec_offs_validate(rec, index, offsets));
 
 	if (rec_offs_comp(offsets)) {
-		rec_set_info_bits_new(rec, update->info_bits);
+
+        ibool   is_gcs = rec_is_gcs(rec);
+        
+        ut_ad(!is_gcs || dict_index_is_clust(index) && dict_table_is_gcs(index->table) &&
+            rec_gcs_get_field_count(rec, NULL) == dict_index_get_n_fields(index));
+
+        rec_set_info_bits_new(rec, update->info_bits);
+
+        if (is_gcs)
+            rec_set_gcs_flag(rec, TRUE);
+        else
+            rec_set_gcs_flag(rec, FALSE);
+
 	} else {
 		rec_set_info_bits_old(rec, update->info_bits);
 	}
