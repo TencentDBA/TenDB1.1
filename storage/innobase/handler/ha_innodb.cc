@@ -6804,6 +6804,8 @@ get_row_format_name(
 		return("DEFAULT");
 	case ROW_TYPE_FIXED:
 		return("FIXED");
+    case ROW_TYPE_GCS:
+        return("GCS");
 	case ROW_TYPE_PAGE:
 	case ROW_TYPE_NOT_USED:
 		break;
@@ -6929,6 +6931,8 @@ create_options_are_valid(
 		break;
 	case ROW_TYPE_DEFAULT:
 		break;
+    case ROW_TYPE_GCS:  /* GCS type check . do nothing */
+        break;
 	case ROW_TYPE_FIXED:
 	case ROW_TYPE_PAGE:
 	case ROW_TYPE_NOT_USED:
@@ -7164,6 +7168,8 @@ ha_innobase::create(
 	case ROW_TYPE_COMPACT:
 		flags = DICT_TF_COMPACT;
 		break;
+    case ROW_TYPE_GCS:   /* for GCS row_format */
+        break;
 	}
 
 	/* Look for a primary key */
