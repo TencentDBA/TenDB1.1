@@ -165,6 +165,18 @@ dict_col_get_sql_null_size(
 }
 
 /*********************************************************************//**
+Gets the column is nullable.
+@return	TRUE if nullable */
+UNIV_INLINE
+ibool
+dict_col_is_nullable(
+/*============*/
+	const dict_col_t*	col)	/*!< in: column */
+{
+	return (col->prtype & DATA_NOT_NULL) == 0;
+}
+
+/*********************************************************************//**
 Gets the column number.
 @return	col->ind, table column position (starting from 0) */
 UNIV_INLINE
@@ -425,6 +437,23 @@ dict_table_is_comp(
 #endif
 
 	return(UNIV_LIKELY(table->flags & DICT_TF_COMPACT));
+}
+
+/********************************************************************//**
+@return	TRUE if table is gcs table */
+UNIV_INLINE
+ibool
+dict_table_is_gcs(
+/*===============*/
+	const dict_table_t*	table)	/*!< in: table */
+{
+	ut_ad(table);
+
+#if DICT_TF_COMPACT != TRUE
+#error
+#endif
+
+	return table->is_gcs;
 }
 
 /********************************************************************//**

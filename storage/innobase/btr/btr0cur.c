@@ -1255,7 +1255,7 @@ btr_cur_optimistic_insert(
 		if (UNIV_LIKELY(entry->n_fields >= n_uniq)
 		    && UNIV_UNLIKELY(REC_NODE_PTR_SIZE
 				     + rec_get_converted_size_comp_prefix(
-					     index, entry->fields, n_uniq,
+					     index, entry->fields, n_uniq, FALSE,
 					     NULL)
 				     /* On a compressed page, there is
 				     a two-byte entry in the dense
@@ -1980,6 +1980,7 @@ btr_cur_optimistic_update(
 	ulint		i;
 	ulint		n_ext;
 	ulint*		offsets;
+    ulint       field_count = 0;
 
 	block = btr_cur_get_block(cursor);
 	page = buf_block_get_frame(block);
@@ -2003,7 +2004,18 @@ btr_cur_optimistic_update(
 	}
 #endif /* UNIV_DEBUG */
 
-	if (!row_upd_changes_field_size_or_external(index, offsets, update)) {
+    if (rec_is_gcs(rec))
+    {
+        ut_ad(dict_index_is_clust(index) && dict_table_is_gcs(index->table));
+
+        field_count = rec_gcs_get_field_count(rec, NULL);
+    }
+    else
+        field_count = dict_index_get_n_fields(index);
+    
+
+	if (field_count == dict_index_get_n_fields(index) &&                        /* 非gcs老行（不是alter table之前生成的行） */
+        !row_upd_changes_field_size_or_external(index, offsets, update)) {
 
 		/* The simplest and the most common case: the update does not
 		change the size of any field and none of the updated fields is

@@ -150,7 +150,8 @@ dict_mem_table_create(
 					is ignored if the table is made
 					a member of a cluster */
 	ulint		n_cols,		/*!< in: number of columns */
-	ulint		flags);		/*!< in: table flags */
+    ulint		flags,	    /*!< in: table flags */
+    ibool       is_gcs);     /*!< in: gcs table flag */
 /****************************************************************//**
 Free a table memory object. */
 UNIV_INTERN
@@ -541,6 +542,7 @@ struct dict_table_struct{
 				the string contains n_cols, it will be
 				allocated from a temporary heap.  The final
 				string will be allocated from table->heap. */
+    ibool       is_gcs;         /* whether is gcs table */
 #ifndef UNIV_HOTBACKUP
 	hash_node_t	name_hash; /*!< hash chain node */
 	hash_node_t	id_hash; /*!< hash chain node */

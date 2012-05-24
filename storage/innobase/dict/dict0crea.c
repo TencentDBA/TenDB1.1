@@ -89,8 +89,19 @@ dict_create_sys_tables_tuple(
 #endif
 
 	ptr = mem_heap_alloc(heap, 4);
-	mach_write_to_4(ptr, table->n_def
-			| ((table->flags & DICT_TF_COMPACT) << 31));
+    if (dict_table_is_gcs(table))                       /* 表定义修改 */
+    {
+        ut_ad(dict_table_is_comp(table));
+
+        mach_write_to_4(ptr, table->n_def
+            | (1 << 31) | (1 << 30));
+    }
+    else 
+    {
+        mach_write_to_4(ptr, table->n_def
+            | ((table->flags & DICT_TF_COMPACT) << 31));
+    }
+
 	dfield_set_data(dfield, ptr, 4);
 	/* 5: TYPE -----------------------------*/
 	dfield = dtuple_get_nth_field(entry, 3/*TYPE*/);

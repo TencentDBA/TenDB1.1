@@ -477,7 +477,17 @@ mlog_open_and_write_index(
 		log_end = log_ptr + alloc;
 		log_ptr = mlog_write_initial_log_record_fast(rec, type,
 							     log_ptr, mtr);
-		mach_write_to_2(log_ptr, n);
+
+        if (dict_index_is_clust(index) && dict_table_is_gcs(index->table))
+        {
+            ut_ad(rec_is_gcs(rec) || rec == page_align(rec) || rec_get_status(rec) & REC_STATUS_NODE_PTR);               /* rec有可能就是页头，如日志MLOG_COMP_LIST_END_COPY_CREATED */
+            mach_write_to_2(log_ptr, n | 0x8000);                         /* 标记是gcs表 */
+        }
+        else
+        {
+            ut_ad(rec == page_align(rec) || !rec_is_gcs(rec));
+		    mach_write_to_2(log_ptr, n);
+        }
 		log_ptr += 2;
 		mach_write_to_2(log_ptr,
 				dict_index_get_n_unique_in_tree(index));
@@ -544,6 +554,7 @@ mlog_parse_index(
 	ulint		i, n, n_uniq;
 	dict_table_t*	table;
 	dict_index_t*	ind;
+    ibool           is_gcs = FALSE;
 
 	ut_ad(comp == FALSE || comp == TRUE);
 
@@ -552,6 +563,12 @@ mlog_parse_index(
 			return(NULL);
 		}
 		n = mach_read_from_2(ptr);
+        if (n & 0x8000)                     /* 最高位为1表示GCS表 */
+        {
+            is_gcs = TRUE;
+            n &= 0x7FFF;
+        }
+        
 		ptr += 2;
 		n_uniq = mach_read_from_2(ptr);
 		ptr += 2;
@@ -563,7 +580,7 @@ mlog_parse_index(
 		n = n_uniq = 1;
 	}
 	table = dict_mem_table_create("LOG_DUMMY", DICT_HDR_SPACE, n,
-				      comp ? DICT_TF_COMPACT : 0);
+				      comp ? DICT_TF_COMPACT : 0, is_gcs);
 	ind = dict_mem_index_create("LOG_DUMMY", "LOG_DUMMY",
 				    DICT_HDR_SPACE, 0, n);
 	ind->table = table;
@@ -582,7 +599,7 @@ mlog_parse_index(
 			dict_mem_table_add_col(
 				table, NULL, NULL,
 				((len + 1) & 0x7fff) <= 1
-				? DATA_BINARY : DATA_FIXBINARY,
+				? DATA_BINARY : DATA_FIXBINARY,         /* 若len 为0或0x7fff，可认为是变长字段；否则是定长字段 */
 				len & 0x8000 ? DATA_NOT_NULL : 0,
 				len & 0x7fff);
 

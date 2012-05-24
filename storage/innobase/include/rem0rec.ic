@@ -27,6 +27,7 @@ Created 5/30/1994 Heikki Tuuri
 #include "ut0byte.h"
 #include "dict0dict.h"
 #include "btr0types.h"
+#include "page0page.h"
 
 /* Compact flag ORed to the extra size returned by rec_get_offsets() */
 #define REC_OFFS_COMPACT	((ulint) 1 << 31)
@@ -744,6 +745,46 @@ rec_set_deleted_flag_new(
 	if (UNIV_LIKELY_NULL(page_zip)) {
 		page_zip_rec_set_deleted(page_zip, rec, flag);
 	}
+}
+
+/******************************************************//**
+set gcs flag */
+UNIV_INLINE
+void
+rec_set_gcs_flag(
+/*=====================*/
+	rec_t*		rec,	/*!< in/out: new-style physical record */
+	ulint		flag)	/*!< in: nonzero if gcs marked */
+{
+	ulint	val;
+
+	val = rec_get_info_bits(rec, TRUE);
+
+	if (flag) {
+		val |= REC_INFO_GCS_FLAG;
+	} else {
+		val &= ~REC_INFO_GCS_FLAG;
+	}
+
+	rec_set_info_bits_new(rec, val);
+}
+
+/******************************************************//**
+@return	TRUE if gcs record type */
+UNIV_INLINE
+ibool
+rec_is_gcs(
+/*=====================*/
+	const rec_t*	rec)	/*!< in: new-style physical record */
+{
+	ulint	val;
+
+//     ut_ad(page_rec_is_comp(rec) && 
+//         (page_rec_is_user_rec(rec) || page_rec_is_supremum(rec) || page_rec_is_infimum(rec)));  // rec可能只是一个内存，非业内地址
+
+	val = rec_get_info_bits(rec, TRUE);
+
+	return (val & REC_INFO_GCS_FLAG) != 0;
 }
 
 /******************************************************//**
@@ -1501,6 +1542,78 @@ rec_offs_size(
 	return(rec_offs_data_size(offsets) + rec_offs_extra_size(offsets));
 }
 
+/**********************************************************//**
+Returns field count of gcs record
+@return	size */
+UNIV_INLINE
+ulint
+rec_gcs_get_field_count(
+/*==========*/
+    const rec_t*    rec,                /*!< in: the record ptr */
+    ulint*	        field_count_len)    /*!< out: occupy size of field count */
+{
+    byte*           ptr;
+    ulint           ret;    
+    ut_ad(rec_is_gcs(rec));
+
+    ptr = (byte*)rec - (REC_N_NEW_EXTRA_BYTES + 1);
+
+    if ((*ptr & 0x80) == 0)                     /*最高bit是0，一个字节*/
+    {
+        if (field_count_len != NULL)
+        {
+            *field_count_len = 1;
+        }
+        
+        ret = *ptr;
+        ut_ad(ret < 0x80);
+
+        return ret;
+    }
+
+    if (field_count_len != NULL)
+    {
+        *field_count_len = 2;
+    }
+
+    ret = ((*ptr-- & 0x7F) << 8) | *ptr;
+    ut_ad(ret < 1500 && ret > 0x7F);
+
+    return ret;
+    
+}
+/**********************************************************//**
+Set field count of gcs record
+@return	the occupy size of field count */
+UNIV_INLINE
+ulint
+rec_gcs_set_field_count(
+/*==========*/
+    rec_t*          rec,                /*!< in: the record ptr */
+    const ulint     n_fields)           /*!< in: field count of gcs record */
+{
+    byte*            ptr;
+
+    ut_ad(rec_is_gcs(rec));
+
+    if (n_fields < 0x80)
+    {
+        ptr = rec - (REC_N_NEW_EXTRA_BYTES + 1);
+        *ptr = (byte)(n_fields & 0x7F);
+        return 1;
+    }
+
+    ut_ad(n_fields < 1500);
+
+    ptr = rec - (REC_N_NEW_EXTRA_BYTES + 2);
+    *ptr++ = (byte)(n_fields & 0xFF);	/** 低字节（低位） */
+    *ptr = (byte)(n_fields >> 8);		/** 高字节（高位）*/
+    ut_ad((*ptr & 0x80) == 0);
+    *ptr |= 0x80;						/* 高字节高bit置1 */
+
+    return 2;
+}
+
 #ifdef UNIV_DEBUG
 /**********************************************************//**
 Returns a pointer to the end of the record.
@@ -1608,7 +1721,7 @@ rec_get_converted_size(
 						   dtuple_get_info_bits(dtuple)
 						   & REC_NEW_STATUS_MASK,
 						   dtuple->fields,
-						   dtuple->n_fields, NULL));
+						   dtuple->n_fields, TRUE, NULL));
 	}
 
 	data_size = dtuple_get_data_size(dtuple, 0);

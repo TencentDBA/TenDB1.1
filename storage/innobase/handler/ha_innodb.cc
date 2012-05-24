@@ -6470,7 +6470,8 @@ create_table_def(
 					an .ibd file for it (no .ibd extension
 					in the path, though); otherwise this
 					is NULL */
-	ulint		flags)		/*!< in: table flags */
+	ulint		flags,		/*!< in: table flags */
+    ibool       is_gcs)
 {
 	Field*		field;
 	dict_table_t*	table;
@@ -6506,7 +6507,7 @@ create_table_def(
 	/* We pass 0 as the space id, and determine at a lower level the space
 	id where to store the table */
 
-	table = dict_mem_table_create(table_name, 0, n_cols, flags);
+	table = dict_mem_table_create(table_name, 0, n_cols, flags, is_gcs);
 
 	if (path_of_temp_table) {
 		table->dir_path_of_temp_table =
@@ -6992,6 +6993,7 @@ ha_innobase::create(
 	const char*	stmt;
 	size_t		stmt_len;
 	enum row_type	row_format;
+    ibool       is_gcs = FALSE;
 
 	DBUG_ENTER("ha_innobase::create");
 
@@ -7165,6 +7167,7 @@ ha_innobase::create(
 			ER_ILLEGAL_HA_CREATE_OPTION,
 			"InnoDB: assuming ROW_FORMAT=COMPACT.");
 	case ROW_TYPE_DEFAULT:
+        is_gcs = TRUE;                              /* 默认格式是GCS */
 	case ROW_TYPE_COMPACT:
 		flags = DICT_TF_COMPACT;
 		break;
@@ -7218,7 +7221,7 @@ ha_innobase::create(
 
 	error = create_table_def(trx, form, norm_name,
 		create_info->options & HA_LEX_CREATE_TMP_TABLE ? name2 : NULL,
-		flags);
+		flags, is_gcs);
 
 	if (error) {
 		goto cleanup;

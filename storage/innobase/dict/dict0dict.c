@@ -1484,6 +1484,13 @@ dict_index_too_big_for_tree(
 		/* Include the "null" flags in the
 		maximum possible record size. */
 		rec_max_size += UT_BITS_IN_BYTES(new_index->n_nullable);
+
+        if (dict_index_is_clust(new_index) && dict_table_is_gcs(table))
+        {
+            //ut_ad(new_index->table == table);
+            rec_max_size += 2;                  /* 两字节field_count，最差情况考虑 */
+        }
+        
 	} else {
 		/* For each column, include a 2-byte offset and a
 		"null" flag.  The 1-byte format is only used in short
@@ -4254,6 +4261,11 @@ dict_index_calc_min_rec_len(
 	if (comp) {
 		ulint nullable = 0;
 		sum = REC_N_NEW_EXTRA_BYTES;
+        if (dict_index_is_clust(index) && dict_table_is_gcs(index->table))
+        {
+            sum += rec_gcs_get_feild_count_len(index->n_fields);
+        }
+
 		for (i = 0; i < dict_index_get_n_fields(index); i++) {
 			const dict_col_t*	col
 				= dict_index_get_nth_col(index, i);
@@ -4837,7 +4849,7 @@ dict_ind_init(void)
 	dict_table_t*		table;
 
 	/* create dummy table and index for REDUNDANT infimum and supremum */
-	table = dict_mem_table_create("SYS_DUMMY1", DICT_HDR_SPACE, 1, 0);
+	table = dict_mem_table_create("SYS_DUMMY1", DICT_HDR_SPACE, 1, 0, FALSE);
 	dict_mem_table_add_col(table, NULL, NULL, DATA_CHAR,
 			       DATA_ENGLISH | DATA_NOT_NULL, 8);
 
@@ -4848,7 +4860,7 @@ dict_ind_init(void)
 	dict_ind_redundant->table = table;
 	/* create dummy table and index for COMPACT infimum and supremum */
 	table = dict_mem_table_create("SYS_DUMMY2",
-				      DICT_HDR_SPACE, 1, DICT_TF_COMPACT);
+				      DICT_HDR_SPACE, 1, DICT_TF_COMPACT, FALSE);
 	dict_mem_table_add_col(table, NULL, NULL, DATA_CHAR,
 			       DATA_ENGLISH | DATA_NOT_NULL, 8);
 	dict_ind_compact = dict_mem_index_create("SYS_DUMMY2", "SYS_DUMMY2",
