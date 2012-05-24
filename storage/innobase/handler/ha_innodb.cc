@@ -6920,6 +6920,7 @@ create_options_are_valid(
 		/* fall through since dynamic also shuns KBS */
 	case ROW_TYPE_COMPACT:
 	case ROW_TYPE_REDUNDANT:
+    case ROW_TYPE_GCS:  /* GCS type check . do nothing */
 		if (kbs_specified) {
 			push_warning_printf(
 				thd, MYSQL_ERROR::WARN_LEVEL_WARN,
@@ -6932,8 +6933,6 @@ create_options_are_valid(
 		break;
 	case ROW_TYPE_DEFAULT:
 		break;
-    case ROW_TYPE_GCS:  /* GCS type check . do nothing */
-        break;
 	case ROW_TYPE_FIXED:
 	case ROW_TYPE_PAGE:
 	case ROW_TYPE_NOT_USED:
@@ -7167,11 +7166,20 @@ ha_innobase::create(
 			ER_ILLEGAL_HA_CREATE_OPTION,
 			"InnoDB: assuming ROW_FORMAT=COMPACT.");
 	case ROW_TYPE_DEFAULT:
-        is_gcs = TRUE;                              /* 默认格式是GCS */
+        if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE))  /* 临时表 分区表 todo  */
+        {
+            is_gcs = TRUE;                              /* 默认格式是GCS */
+        }
 	case ROW_TYPE_COMPACT:
 		flags = DICT_TF_COMPACT;
 		break;
+
     case ROW_TYPE_GCS:   /* for GCS row_format */
+        if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE))  /* 临时表 分区表 todo  */
+        {
+            //to do 报错
+        }
+        flags = DICT_TF_COMPACT;
         break;
 	}
 

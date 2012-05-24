@@ -22,6 +22,15 @@
 */
 
 %{
+/* Add this to normal compile */
+#define yyparse         MYSQLparse
+#define yylex           MYSQLlex
+#define yyerror         MYSQLerror
+#define yylval          MYSQLlval
+#define yychar          MYSQLchar
+#define yydebug         MYSQLdebug
+#define yynerrs         MYSQLnerrs
+
 /* thd is passed as an argument to yyparse(), and subsequently to yylex().
 ** The type will be void*, so it must be  cast to (THD*) when used.
 ** Use the YYTHD macro for this.
