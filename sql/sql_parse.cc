@@ -6960,6 +6960,39 @@ void create_table_set_open_action_and_adjust_tables(LEX *lex)
 }
 
 
+
+/**
+  CHECK ENGINE AND ROW_FORMAT for gcs
+  @param thd  Thread handler
+  @param create_info  create info of table 
+
+*/
+bool
+check_engine_n_row_format(THD *thd,HA_CREATE_INFO *create_info)
+{
+
+    bool t_error = FALSE;
+    DBUG_ENTER("check_engine_n_row_format");
+    enum legacy_db_type my_db_type;
+
+    /* get the create table's engine */
+    my_db_type = ha_legacy_type(ha_checktype(thd,ha_legacy_type(create_info->db_type),0,0));
+        
+    enum row_type row_type;
+    row_type = create_info->row_type;
+    
+    /* if the enine is not InnoDB and row_type is gcs, return error. */
+    if(my_db_type != DB_TYPE_INNODB &&  row_type == ROW_TYPE_GCS)
+    {
+        
+        t_error = TRUE;
+        my_error(ER_CANT_CREATE_TABLE, MYF(0),"Cannot create gcs row_format table for NONE InnoDB table",2012525);
+    }
+    
+    DBUG_RETURN(t_error);
+}
+
+
 /**
   CREATE TABLE query pre-check.
 
@@ -7020,8 +7053,16 @@ bool create_table_precheck(THD *thd, TABLE_LIST *tables,
     if (check_table_access(thd, SELECT_ACL, tables, FALSE, UINT_MAX, FALSE))
       goto err;
   }
-  error= FALSE;
+  
+  
+  /* check if the engine and the row_format: gcs row_format is only allowed for InnoDB.*/
+  
+  if(check_engine_n_row_format(thd,&(lex->create_info))){
+      goto err;
+  }
 
+  /* no error found. return false */
+  error= FALSE;
 err:
   DBUG_RETURN(error);
 }

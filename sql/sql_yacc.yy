@@ -22,6 +22,15 @@
 */
 
 %{
+/* Add this to normal compile */
+#define yyparse         MYSQLparse
+#define yylex           MYSQLlex
+#define yyerror         MYSQLerror
+#define yylval          MYSQLlval
+#define yychar          MYSQLchar
+#define yydebug         MYSQLdebug
+#define yynerrs         MYSQLnerrs
+
 /* thd is passed as an argument to yyparse(), and subsequently to yylex().
 ** The type will be void*, so it must be  cast to (THD*) when used.
 ** Use the YYTHD macro for this.
@@ -4336,6 +4345,9 @@ partitioning:
             {
               lex->alter_info.flags|= ALTER_PARTITION;
             }
+            
+            /* add partition flags for create info */
+            Lex->create_info.other_options |= HA_LEX_CREATE_WITH_PARTITION ;
           }
           partition
         ;
@@ -6523,6 +6535,9 @@ add_partition_rule:
             }
             lex->alter_info.flags|= ALTER_ADD_PARTITION;
             lex->no_write_to_binlog= $3;
+            
+             /* add partition flags for alter info */
+            Lex->create_info.other_options |= HA_LEX_CREATE_WITH_PARTITION ;
           }
           add_part_extra
           {}

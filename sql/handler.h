@@ -287,6 +287,12 @@
 #define HA_LEX_CREATE_TMP_TABLE	1
 #define HA_LEX_CREATE_IF_NOT_EXISTS 2
 #define HA_LEX_CREATE_TABLE_LIKE 4
+
+    /* create flags of create table */
+#define HA_LEX_CREATE_WITH_PARTITION (1L << 3)
+
+
+
 #define HA_OPTION_NO_CHECKSUM	(1L << 17)
 #define HA_OPTION_NO_DELAY_KEY_WRITE (1L << 18)
 #define HA_MAX_REC_LENGTH	65535
@@ -1072,6 +1078,9 @@ typedef struct st_ha_create_information
   enum enum_ha_unused unused1;
   bool frm_only;                        /* 1 if no ha_create_table() */
   bool varchar;                         /* 1 if table has a VARCHAR */
+
+  uint other_options;                     /* record other create options for create info */
+
   enum ha_storage_media storage_media;  /* DEFAULT, DISK or MEMORY */
   enum enum_ha_unused unused2;
 } HA_CREATE_INFO;
