@@ -3130,6 +3130,12 @@ ha_innobase::get_row_type() const
 	if (prebuilt && prebuilt->table) {
 		const ulint	flags = prebuilt->table->flags;
 
+        /* check if GCS type*/      
+        if(dict_table_is_gcs(prebuilt->table)){
+            return (ROW_TYPE_GCS);
+        }
+
+
 		if (UNIV_UNLIKELY(!flags)) {
 			return(ROW_TYPE_REDUNDANT);
 		}
@@ -7164,23 +7170,37 @@ ha_innobase::create(
 		push_warning(
 			thd, MYSQL_ERROR::WARN_LEVEL_WARN,
 			ER_ILLEGAL_HA_CREATE_OPTION,
-			"InnoDB: assuming ROW_FORMAT=COMPACT.");
+			"InnoDB: assuming ROW_FORMAT=GCS.");
 	case ROW_TYPE_DEFAULT:
-        if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE))  /* 临时表 分区表 todo  */
+        if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE) && !(create_info->other_options & HA_LEX_CREATE_WITH_PARTITION))  
         {
-            is_gcs = TRUE;                              /* 默认格式是GCS */
+            is_gcs = TRUE;                              /* 非临时表,分区表,设置为 gcs row_format,否则设置为compact  */
         }
 	case ROW_TYPE_COMPACT:
 		flags = DICT_TF_COMPACT;
 		break;
 
-    case ROW_TYPE_GCS:   /* for GCS row_format */
-        if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE))  /* 临时表 分区表 todo  */
+    case ROW_TYPE_GCS:   
+        /* for GCS row_format */
+
+        if ((create_info->options & HA_LEX_CREATE_TMP_TABLE) || (create_info->other_options & HA_LEX_CREATE_WITH_PARTITION))
         {
-            //to do 报错
+            /* error: cannot create a table of gcs row_format for tmp_table or partition_table */
+            /*push_warning(
+                thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                ER_ILLEGAL_HA_CREATE_OPTION,
+                "InnoDB: assuming ROW_FORMAT=COMPACT. Cannot create a GCS table for tmp table or partition table."); 
+            */
+            my_error(ER_CANT_CREATE_TABLE,MYF(0),create_info->alias,ER_CANT_CREATE_TABLE);
+            
+            DBUG_RETURN(-1);
+        }else{
+            /* set row_format as gcs */
+            is_gcs = TRUE;
         }
         flags = DICT_TF_COMPACT;
         break;
+
 	}
 
 	/* Look for a primary key */
