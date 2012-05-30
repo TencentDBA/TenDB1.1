@@ -5191,6 +5191,21 @@ void signal_log_not_needed(struct handlerton, char *log_file)
 }
 
 
+
+/******************************************************** 5.6 ********************************************************/
+/*
+   Default implementation to support in-place alter table
+   and old online add/drop index API
+*/
+
+void handler::notify_table_changed()
+{
+  ha_create_handler_files(table->s->path.str, NULL, CHF_INDEX_FLAG, NULL);
+}
+
+/******************************************************** end 5.6 *********************************************************/
+
+
 #ifdef TRANS_LOG_MGM_EXAMPLE_CODE
 /*
   Example of transaction log management functions based on assumption that logs

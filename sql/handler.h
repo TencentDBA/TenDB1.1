@@ -53,6 +53,21 @@
 #define HA_ADMIN_NEEDS_ALTER    -11
 #define HA_ADMIN_NEEDS_CHECK    -12
 
+/**
+   Return values for check_if_supported_inplace_alter().
+
+   @see check_if_supported_inplace_alter() for description of
+   the individual values.
+*/
+enum enum_alter_inplace_result {
+  HA_ALTER_ERROR,
+  HA_ALTER_INPLACE_NOT_SUPPORTED,
+  HA_ALTER_INPLACE_EXCLUSIVE_LOCK,
+  HA_ALTER_INPLACE_SHARED_LOCK,
+  HA_ALTER_INPLACE_NO_LOCK_AFTER_PREPARE,
+  HA_ALTER_INPLACE_NO_LOCK
+};
+
 /* Bits in table_flags() to show what database can do */
 
 #define HA_NO_TRANSACTIONS     (1 << 0) /* Doesn't support transactions */
@@ -1076,6 +1091,206 @@ typedef struct st_ha_create_information
   enum enum_ha_unused unused2;
 } HA_CREATE_INFO;
 
+/*************************************** ADD FROM 5.6  ***************************************/
+
+/**
+  Class describing changes to be done by ALTER TABLE.
+  Instance of this class is passed to storage engine in order
+  to determine if this ALTER TABLE can be done using in-place
+  algorithm. It is also used for executing the ALTER TABLE
+  using in-place algorithm.
+*/
+
+class Alter_inplace_info
+{
+public:
+  /**
+     Bits to show in detail what operations the storage engine is
+     to execute.
+
+     All these operations are supported as in-place operations by the
+     SQL layer. This means that operations that by their nature must
+     be performed by copying the table to a temporary table, will not
+     have their own flags here (e.g. ALTER TABLE FORCE, ALTER TABLE
+     ENGINE).
+
+     We generally try to specify handler flags only if there are real
+     changes. But in cases when it is cumbersome to determine if some
+     attribute has really changed we might choose to set flag
+     pessimistically, for example, relying on parser output only.
+  */
+  typedef ulong HA_ALTER_FLAGS;
+
+  // Add non-unique, non-primary index
+  static const HA_ALTER_FLAGS ADD_INDEX_FLAG                  = 1L << 0;
+
+  // Drop non-unique, non-primary index
+  static const HA_ALTER_FLAGS DROP_INDEX_FLAG                 = 1L << 1;
+
+  // Add unique, non-primary index
+  static const HA_ALTER_FLAGS ADD_UNIQUE_INDEX_FLAG           = 1L << 2;
+
+  // Drop unique, non-primary index
+  static const HA_ALTER_FLAGS DROP_UNIQUE_INDEX_FLAG          = 1L << 3;
+
+  // Add primary index
+  static const HA_ALTER_FLAGS ADD_PK_INDEX_FLAG               = 1L << 4;
+
+  // Drop primary index
+  static const HA_ALTER_FLAGS DROP_PK_INDEX_FLAG              = 1L << 5;
+
+  // Add column
+  static const HA_ALTER_FLAGS ADD_COLUMN_FLAG                 = 1L << 6;
+
+  // Drop column
+  static const HA_ALTER_FLAGS DROP_COLUMN_FLAG                = 1L << 7;
+
+  // Rename column
+  static const HA_ALTER_FLAGS ALTER_COLUMN_NAME_FLAG          = 1L << 8;
+
+  // Change column datatype
+  static const HA_ALTER_FLAGS ALTER_COLUMN_TYPE_FLAG          = 1L << 9;
+
+  /**
+    Change column datatype in such way that new type has compatible
+    packed representation with old type, so it is theoretically
+    possible to perform change by only updating data dictionary
+    without changing table rows.
+  */
+  static const HA_ALTER_FLAGS ALTER_COLUMN_EQUAL_PACK_LENGTH_FLAG = 1L << 10;
+
+  // Reorder column
+  static const HA_ALTER_FLAGS ALTER_COLUMN_ORDER_FLAG         = 1L << 11;
+
+  // Change column from NOT NULL to NULL
+  static const HA_ALTER_FLAGS ALTER_COLUMN_NULLABLE_FLAG      = 1L << 12;
+
+  // Change column from NULL to NOT NULL
+  static const HA_ALTER_FLAGS ALTER_COLUMN_NOT_NULLABLE_FLAG  = 1L << 13;
+
+  // Set or remove default column value
+  static const HA_ALTER_FLAGS ALTER_COLUMN_DEFAULT_FLAG       = 1L << 14;
+
+  // Add foreign key
+  static const HA_ALTER_FLAGS ADD_FOREIGN_KEY_FLAG            = 1L << 15;
+
+  // Drop foreign key
+  static const HA_ALTER_FLAGS DROP_FOREIGN_KEY_FLAG           = 1L << 16;
+
+  // table_options changed, see HA_CREATE_INFO::used_fields for details.
+  static const HA_ALTER_FLAGS CHANGE_CREATE_OPTION_FLAG       = 1L << 17;
+
+  // Table is renamed
+  static const HA_ALTER_FLAGS ALTER_RENAME_FLAG              = 1L << 18;
+
+  // Change the storage type of column 
+  static const HA_ALTER_FLAGS ALTER_COLUMN_STORAGE_TYPE_FLAG  = 1L << 19;
+
+  // Change the column format of column
+  static const HA_ALTER_FLAGS ALTER_COLUMN_COLUMN_FORMAT_FLAG = 1L << 20;
+
+  /**
+    Create options (like MAX_ROWS) for the new version of table.
+
+    @note The referenced instance of HA_CREATE_INFO object was already
+          used to create new .FRM file for table being altered. So it
+          has been processed by mysql_prepare_create_table() already.
+          For example, this means that it has HA_OPTION_PACK_RECORD
+          flag in HA_CREATE_INFO::table_options member correctly set.
+  */
+  HA_CREATE_INFO *create_info;
+
+  /**
+    Alter options, fields and keys for the new version of table.
+
+    @note The referenced instance of Alter_info object was already
+          used to create new .FRM file for table being altered. So it
+          has been processed by mysql_prepare_create_table() already.
+          In particular, this means that in Create_field objects for
+          fields which were present in some form in the old version
+          of table, Create_field::field member points to corresponding
+          Field instance for old version of table.
+  */
+  void *alter_info;
+
+//   /**
+//     Array of KEYs for new version of table - including KEYs to be added.
+// 
+//     @note Currently this array is produced as result of
+//           mysql_prepare_create_table() call.
+//           This means that it follows different convention for
+//           KEY_PART_INFO::fieldnr values than objects in TABLE::key_info
+//           array.
+// 
+//     @todo This is mainly due to the fact that we need to keep compatibility
+//           with removed handler::add_index() call. We plan to switch to
+//           TABLE::key_info numbering later.
+// 
+//     KEYs are sorted - see sort_keys().
+//   */
+//   KEY  *key_info_buffer;
+// 
+//   /** Size of key_info_buffer array. */
+//   uint key_count;
+// 
+//   /** Size of index_drop_buffer array. */
+//   uint index_drop_count;
+// 
+//   /**
+//      Array of pointers to KEYs to be dropped belonging to the TABLE instance
+//      for the old version of the table.
+//   */
+//   KEY  **index_drop_buffer;
+// 
+//   /** Size of index_add_buffer array. */
+//   uint index_add_count;
+// 
+//   /**
+//      Array of indexes into key_info_buffer for KEYs to be added,
+//      sorted in increasing order.
+//   */
+//   uint *index_add_buffer;
+// 
+//   /**
+//      Context information to allow handlers to keep context between in-place
+//      alter API calls.
+// 
+//      @see inplace_alter_handler_ctx for information about object lifecycle.
+//   */
+//   inplace_alter_handler_ctx *handler_ctx;
+
+  /**
+     Flags describing in detail which operations the storage engine is to execute.
+  */
+  HA_ALTER_FLAGS handler_flags;
+
+  /** true for ALTER IGNORE TABLE ... */
+  const bool ignore;
+
+  Alter_inplace_info(
+        HA_CREATE_INFO      *create_info_arg,
+        void                *alter_info_arg,
+        bool                ignore_arg
+  ): create_info(create_info_arg),
+    alter_info(alter_info_arg),
+//     key_info_buffer(key_info_arg),
+//     key_count(key_count_arg),
+//     index_drop_count(0),
+//     index_drop_buffer(NULL),
+//     index_add_count(0),
+//     index_add_buffer(NULL),
+//     handler_ctx(NULL),
+    handler_flags(0),
+    ignore(ignore_arg)
+  {}
+
+  ~Alter_inplace_info()
+  {
+    //delete handler_ctx;
+  }
+};
+
+/*************************************** END ADD FROM 5.6  ***************************************/
 
 typedef struct st_key_create_information
 {
@@ -1988,6 +2203,54 @@ public:
       return ht->alter_table_flags(flags);
     return 0;
   }
+
+
+
+ virtual bool inplace_alter_table(TABLE *altered_table,
+                                  Alter_inplace_info *ha_alter_info)
+ { return false; }
+
+
+ /**
+    Notify the storage engine that the table structure (.FRM) has been updated.
+
+    @note No errors are allowed during notify_table_changed().
+ */
+ virtual void notify_table_changed();
+
+ virtual
+ bool
+ check_if_supported_inplace_alter(
+     /*==========================================*/
+     THD                *thd,
+     TABLE              *table,
+     Alter_inplace_info *inplace_info
+)
+ {
+    return false;                               /* don't support inplace alter unless innodb */
+ }
+
+
+
+ /**
+    Public function wrapping the actual handler call.
+    @see inplace_alter_table()
+ */
+ bool ha_inplace_alter_table(TABLE *altered_table,
+                             Alter_inplace_info *ha_alter_info)
+ {
+   return inplace_alter_table(altered_table, ha_alter_info);
+ }
+
+
+ /**
+    Public function wrapping the actual handler call.
+    @see notify_table_changed()
+ */
+ void ha_notify_table_changed()
+ {
+   notify_table_changed();
+ }
 
 protected:
   /* Service methods for use by storage engines. */

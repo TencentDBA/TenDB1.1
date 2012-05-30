@@ -956,30 +956,84 @@ inline bool st_select_lex_unit::is_union ()
     first_select()->next_select()->linkage == UNION_TYPE;
 }
 
+// Set for ADD [COLUMN]
 #define ALTER_ADD_COLUMN	(1L << 0)
+
+// Set for DROP [COLUMN]
 #define ALTER_DROP_COLUMN	(1L << 1)
+
+// Set for CHANGE [COLUMN] | MODIFY [CHANGE]
+// Set by mysql_recreate_table()
 #define ALTER_CHANGE_COLUMN	(1L << 2)
+
+// Set for ADD INDEX | ADD KEY | ADD PRIMARY KEY | ADD UNIQUE KEY |
+//         ADD UNIQUE INDEX | ALTER ADD [COLUMN]
 #define ALTER_ADD_INDEX		(1L << 3)
+
+// Set for DROP PRIMARY KEY | DROP FOREIGN KEY | DROP KEY | DROP INDEX
 #define ALTER_DROP_INDEX	(1L << 4)
+
+// Set for RENAME [TO]
 #define ALTER_RENAME		(1L << 5)
+
+// Set for ORDER BY
 #define ALTER_ORDER		(1L << 6)
+
+// Set for table_options
 #define ALTER_OPTIONS		(1L << 7)
+
+// Set for ALTER [COLUMN] ... SET DEFAULT ... | DROP DEFAULT
 #define ALTER_CHANGE_COLUMN_DEFAULT (1L << 8)
+
+// Set for DISABLE KEYS | ENABLE KEYS
 #define ALTER_KEYS_ONOFF        (1L << 9)
+
+// Set for CONVERT TO CHARACTER SET
 #define ALTER_CONVERT           (1L << 10)
+
+// Set for FORCE
+// Set by mysql_recreate_table()
 #define ALTER_RECREATE          (1L << 11)
+
+// Set for ADD PARTITION
 #define ALTER_ADD_PARTITION     (1L << 12)
+
+// Set for DROP PARTITION
 #define ALTER_DROP_PARTITION    (1L << 13)
+
+// Set for COALESCE PARTITION
 #define ALTER_COALESCE_PARTITION (1L << 14)
+
+// Set for REORGANIZE PARTITION ... INTO
 #define ALTER_REORGANIZE_PARTITION (1L << 15)
+
+// Set for partition_options
 #define ALTER_PARTITION          (1L << 16)
+
+// Set for LOAD INDEX INTO CACHE ... PARTITION
+// Set for CACHE INDEX ... PARTITION
 #define ALTER_ADMIN_PARTITION    (1L << 17)
+
+// Set for REORGANIZE PARTITION
 #define ALTER_TABLE_REORG        (1L << 18)
+
+// Set for REBUILD PARTITION
 #define ALTER_REBUILD_PARTITION  (1L << 19)
+
+// Set for partitioning operations specifying ALL keyword
 #define ALTER_ALL_PARTITION      (1L << 20)
+
+// Set for REMOVE PARTITIONING
 #define ALTER_REMOVE_PARTITIONING (1L << 21)
+
+// Set for ADD/DROP FOREIGN KEY
 #define ALTER_FOREIGN_KEY        (1L << 22)
+
+// Set by Sql_cmd_alter_table_truncate_partition::execute()
 #define ALTER_TRUNCATE_PARTITION (1L << 23)
+
+// Set for ADD [COLUMN] FIRST | AFTER
+#define ALTER_COLUMN_ORDER       (1L << 24)
 
 enum enum_alter_table_change_level
 {
@@ -1016,13 +1070,20 @@ public:
 class Alter_info
 {
 public:
+  // Columns and keys to be dropped.
   List<Alter_drop>              drop_list;
+  // Columns for ALTER_COLUMN_CHANGE_DEFAULT.
   List<Alter_column>            alter_list;
+  // List of keys, used by both CREATE and ALTER TABLE.
   List<Key>                     key_list;
+  // List of columns, used by both CREATE and ALTER TABLE.
   List<Create_field>            create_list;
+  // Type of ALTER TABLE operation.
   uint                          flags;
+  // Enable or disable keys.
   enum enum_enable_or_disable   keys_onoff;
   enum tablespace_op_type       tablespace_op;
+  // List of partitions.
   List<char>                    partition_names;
   uint                          num_parts;
   enum_alter_table_change_level change_level;

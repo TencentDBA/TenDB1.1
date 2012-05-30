@@ -34,6 +34,9 @@ extern "C" {
 #include "trx0roll.h"
 #include "ha_prototypes.h"
 #include "handler0alter.h"
+
+#include "pars0pars.h"
+#include "que0que.h"
 }
 
 #include "ha_innodb.h"
@@ -1381,4 +1384,367 @@ func_exit:
 	srv_active_wake_master_thread();
 
 	DBUG_RETURN(err);
+}
+
+/* FROM 5.6 */
+
+/** Operations for creating an index in place */
+static const Alter_inplace_info::HA_ALTER_FLAGS INNOBASE_INPLACE_CREATE
+= Alter_inplace_info::ADD_INDEX_FLAG
+| Alter_inplace_info::ADD_UNIQUE_INDEX_FLAG
+| Alter_inplace_info::ADD_PK_INDEX_FLAG;// not online
+
+/** Operations for altering a table that InnoDB does not care about */
+static const Alter_inplace_info::HA_ALTER_FLAGS INNOBASE_INPLACE_IGNORE
+= Alter_inplace_info::ALTER_COLUMN_DEFAULT_FLAG
+| Alter_inplace_info::ALTER_RENAME_FLAG
+| Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG;
+
+/** Operations that InnoDB can perform online */
+static const Alter_inplace_info::HA_ALTER_FLAGS INNOBASE_ONLINE_OPERATIONS
+= INNOBASE_INPLACE_IGNORE
+| Alter_inplace_info::ADD_INDEX_FLAG
+| Alter_inplace_info::DROP_INDEX_FLAG
+| Alter_inplace_info::ADD_UNIQUE_INDEX_FLAG
+| Alter_inplace_info::DROP_UNIQUE_INDEX_FLAG
+| Alter_inplace_info::DROP_INDEX_FLAG
+| Alter_inplace_info::DROP_FOREIGN_KEY_FLAG
+| Alter_inplace_info::ALTER_COLUMN_NAME_FLAG;
+
+bool
+innobase_add_columns_simple(
+    /*===================*/
+    const TABLE_SHARE*	table_share,
+    row_prebuilt_t*		prebuilt,
+    trx_t*			    trx,
+    Alter_inplace_info* inplace_info
+)
+{
+    pars_info_t*	info;
+    ulint   		err;
+
+    DBUG_ENTER("innobase_rename_column");
+
+    DBUG_ASSERT(trx_get_dict_operation(trx) == TRX_DICT_OP_INDEX);
+    ut_ad(trx->dict_operation_lock_mode == RW_X_LATCH);
+    ut_ad(mutex_own(&dict_sys->mutex));
+#ifdef UNIV_SYNC_DEBUG
+    ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_EX));
+#endif /* UNIV_SYNC_DEBUG */
+
+    info = pars_info_create();
+
+
+    return true;
+}
+
+/** Rename a column.
+@param table_share	the TABLE_SHARE
+@param prebuilt		the prebuilt struct
+@param trx		data dictionary transaction
+@param nth_col		0-based index of the column
+@param from		old column name
+@param to		new column name
+@retval true		Failure
+@retval false		Success */
+static __attribute__((nonnull, warn_unused_result))
+bool
+innobase_rename_column(
+/*===================*/
+	const TABLE_SHARE*	table_share,
+	row_prebuilt_t*		prebuilt,
+	trx_t*			trx,
+	ulint			nth_col,
+	const char*		from,
+	const char*		to)
+{
+	pars_info_t*	info;
+	ulint   		error;
+
+	DBUG_ENTER("innobase_rename_column");
+
+	DBUG_ASSERT(trx_get_dict_operation(trx) == TRX_DICT_OP_INDEX);
+	ut_ad(trx->dict_operation_lock_mode == RW_X_LATCH);
+	ut_ad(mutex_own(&dict_sys->mutex));
+#ifdef UNIV_SYNC_DEBUG
+	ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_EX));
+#endif /* UNIV_SYNC_DEBUG */
+
+	info = pars_info_create();
+
+	pars_info_add_ull_literal(info, "tableid", prebuilt->table->id);
+	pars_info_add_int4_literal(info, "nth", nth_col);
+	pars_info_add_str_literal(info, "old", from);
+	pars_info_add_str_literal(info, "new", to);
+
+	trx->op_info = "renaming column in SYS_COLUMNS";
+
+	error = que_eval_sql(
+		info,
+		"PROCEDURE RENAME_SYS_COLUMNS_PROC () IS\n"
+		"BEGIN\n"
+		"UPDATE SYS_COLUMNS SET NAME=:new\n"
+		"WHERE TABLE_ID=:tableid AND NAME=:old\n"
+		"AND POS=:nth;\n"
+		"END;\n",
+		FALSE, trx);
+
+	DBUG_EXECUTE_IF("ib_rename_column_error",
+			error = DB_OUT_OF_FILE_SPACE;);
+
+	if (error != DB_SUCCESS) {
+err_exit:
+		//my_error_innodb(error, table_share->table_name.str, 0);
+		trx->error_state = DB_SUCCESS;
+		trx->op_info = "";
+		DBUG_RETURN(true);
+	}
+
+	trx->op_info = "renaming column in SYS_FIELDS";
+
+	for (dict_index_t* index = dict_table_get_first_index(prebuilt->table);
+	     index != NULL;
+	     index = dict_table_get_next_index(index)) {
+
+		for (ulint i = 0; i < dict_index_get_n_fields(index); i++) {
+			if (strcmp(dict_index_get_nth_field(index, i)->name,
+				   from)) {
+				continue;
+			}
+
+			info = pars_info_create();
+
+			pars_info_add_ull_literal(info, "indexid", index->id);
+			pars_info_add_int4_literal(info, "nth", i);
+			pars_info_add_str_literal(info, "old", from);
+			pars_info_add_str_literal(info, "new", to);
+
+			error = que_eval_sql(
+				info,
+				"PROCEDURE RENAME_SYS_FIELDS_PROC () IS\n"
+				"BEGIN\n"
+
+				"UPDATE SYS_FIELDS SET COL_NAME=:new\n"
+				"WHERE INDEX_ID=:indexid AND COL_NAME=:old\n"
+				"AND POS=:nth;\n"
+
+				/* Try again, in case there is a prefix_len
+				encoded in SYS_FIELDS.POS */
+
+				"UPDATE SYS_FIELDS SET COL_NAME=:new\n"
+				"WHERE INDEX_ID=:indexid AND COL_NAME=:old\n"
+				"AND POS>=65536*:nth AND POS<65536*(:nth+1);\n"
+
+				"END;\n",
+				FALSE, trx);
+
+			if (error != DB_SUCCESS) {
+				goto err_exit;
+			}
+		}
+	}
+
+	trx->op_info = "renaming column in SYS_FOREIGN_COLS";
+
+	for (dict_foreign_t* foreign = UT_LIST_GET_FIRST(
+		     prebuilt->table->foreign_list);
+	     foreign != NULL;
+	     foreign = UT_LIST_GET_NEXT(foreign_list, foreign)) {
+		for (unsigned i = 0; i < foreign->n_fields; i++) {
+			if (strcmp(foreign->foreign_col_names[i], from)) {
+				continue;
+			}
+
+			info = pars_info_create();
+
+			pars_info_add_str_literal(info, "id", foreign->id);
+			pars_info_add_int4_literal(info, "nth", i);
+			pars_info_add_str_literal(info, "old", from);
+			pars_info_add_str_literal(info, "new", to);
+
+			error = que_eval_sql(
+				info,
+				"PROCEDURE RENAME_SYS_FOREIGN_F_PROC () IS\n"
+				"BEGIN\n"
+				"UPDATE SYS_FOREIGN_COLS\n"
+				"SET FOR_COL_NAME=:new\n"
+				"WHERE ID=:id AND POS=:nth\n"
+				"AND FOR_COL_NAME=:old;\n"
+				"END;\n",
+				FALSE, trx);
+
+			if (error != DB_SUCCESS) {
+				goto err_exit;
+			}
+		}
+	}
+
+	for (dict_foreign_t* foreign = UT_LIST_GET_FIRST(
+		     prebuilt->table->referenced_list);
+	     foreign != NULL;
+	     foreign = UT_LIST_GET_NEXT(referenced_list, foreign)) {
+		for (unsigned i = 0; i < foreign->n_fields; i++) {
+			if (strcmp(foreign->referenced_col_names[i], from)) {
+				continue;
+			}
+
+			info = pars_info_create();
+
+			pars_info_add_str_literal(info, "id", foreign->id);
+			pars_info_add_int4_literal(info, "nth", i);
+			pars_info_add_str_literal(info, "old", from);
+			pars_info_add_str_literal(info, "new", to);
+
+			error = que_eval_sql(
+				info,
+				"PROCEDURE RENAME_SYS_FOREIGN_R_PROC () IS\n"
+				"BEGIN\n"
+				"UPDATE SYS_FOREIGN_COLS\n"
+				"SET REF_COL_NAME=:new\n"
+				"WHERE ID=:id AND POS=:nth\n"
+				"AND REF_COL_NAME=:old;\n"
+				"END;\n",
+				FALSE, trx);
+
+			if (error != DB_SUCCESS) {
+				goto err_exit;
+			}
+		}
+	}
+
+	trx->op_info = "";
+	/* Rename the column in the data dictionary cache. */
+	//dict_mem_table_col_rename(prebuilt->table, nth_col, from, to);
+	DBUG_RETURN(false);
+}
+
+/*
+
+true: support
+*/
+UNIV_INTERN
+bool
+ha_innobase::check_if_supported_inplace_alter(
+    /*==========================================*/
+    THD                     *thd,
+    TABLE                   *table,
+    Alter_inplace_info      *inplace_info
+)
+{
+    DBUG_ENTER("check_if_supported_inplace_alter");
+
+    //to do
+
+    
+    
+    DBUG_RETURN(false);
+}
+
+
+UNIV_INTERN
+bool
+ha_innobase::inplace_alter_table(
+/*=============================*/
+	TABLE*			altered_table,
+	Alter_inplace_info*	ha_alter_info)
+{
+
+    return false;
+
+// 	dberr_t	error;
+// 
+// 	DBUG_ENTER("inplace_alter_table");
+// #ifdef UNIV_SYNC_DEBUG
+// 	ut_ad(!rw_lock_own(&dict_operation_lock, RW_LOCK_EX));
+// 	ut_ad(!rw_lock_own(&dict_operation_lock, RW_LOCK_SHARED));
+// #endif /* UNIV_SYNC_DEBUG */
+// 
+// 	if (!(ha_alter_info->handler_flags & INNOBASE_INPLACE_CREATE)) {
+// 		DBUG_RETURN(false);
+// 	}
+// 
+// 	class ha_innobase_inplace_ctx*	ctx
+// 		= static_cast<class ha_innobase_inplace_ctx*>
+// 		(ha_alter_info->handler_ctx);
+// 
+// 	DBUG_ASSERT(ctx);
+// 	DBUG_ASSERT(ctx->trx);
+// 
+// 	if (prebuilt->table->ibd_file_missing
+// 	    || prebuilt->table->tablespace_discarded) {
+// 		goto all_done;
+// 	}
+// 
+// 	/* Read the clustered index of the table and build
+// 	indexes based on this information using temporary
+// 	files and merge sort. */
+// 	DBUG_EXECUTE_IF("innodb_OOM_inplace_alter",
+// 			error = DB_OUT_OF_MEMORY; goto oom;);
+// 	error = row_merge_build_indexes(
+// 		prebuilt->trx,
+// 		prebuilt->table, ctx->indexed_table,
+// 		ctx->online,
+// 		ctx->add, ctx->add_key_numbers, ctx->num_to_add, table);
+// #ifndef DBUG_OFF
+// oom:
+// #endif /* !DBUG_OFF */
+// 
+// 	/* After an error, remove all those index definitions
+// 	from the dictionary which were defined. */
+// 
+// 	switch (error) {
+// 		KEY*	dup_key;
+// 	all_done:
+// 	case DB_SUCCESS:
+// 		ut_d(mutex_enter(&dict_sys->mutex));
+// 		ut_d(dict_table_check_for_dup_indexes(
+// 			     prebuilt->table, CHECK_PARTIAL_OK));
+// 		ut_d(mutex_exit(&dict_sys->mutex));
+// 		/* n_ref_count must be 1, or 2 when purge
+// 		happens to be executing on this very table. */
+// 		DBUG_ASSERT(ctx->indexed_table == prebuilt->table
+// 			    || prebuilt->table->n_ref_count - 1 <= 1);
+// 		DEBUG_SYNC(user_thd, "innodb_after_inplace_alter_table");
+// 		DBUG_RETURN(false);
+// 	case DB_DUPLICATE_KEY:
+// 		if (prebuilt->trx->error_key_num == ULINT_UNDEFINED) {
+// 			/* This should be the hidden index on FTS_DOC_ID. */
+// 			dup_key = NULL;
+// 		} else {
+// 			DBUG_ASSERT(prebuilt->trx->error_key_num
+// 				    < ha_alter_info->key_count);
+// 			dup_key = &ha_alter_info->key_info_buffer[
+// 				prebuilt->trx->error_key_num];
+// 		}
+// 		print_keydup_error(dup_key);
+// 		break;
+// 	case DB_ONLINE_LOG_TOO_BIG:
+// 		DBUG_ASSERT(ctx->online);
+// 		my_error(ER_INNODB_ONLINE_LOG_TOO_BIG, MYF(0),
+// 			 (prebuilt->trx->error_key_num == ULINT_UNDEFINED)
+// 			 ? FTS_DOC_ID_INDEX_NAME
+// 			 : ha_alter_info->key_info_buffer[
+// 				 prebuilt->trx->error_key_num].name);
+// 		break;
+// 	case DB_INDEX_CORRUPT:
+// 		my_error(ER_INDEX_CORRUPT, MYF(0),
+// 			 (prebuilt->trx->error_key_num == ULINT_UNDEFINED)
+// 			 ? FTS_DOC_ID_INDEX_NAME
+// 			 : ha_alter_info->key_info_buffer[
+// 				 prebuilt->trx->error_key_num].name);
+// 		break;
+// 	default:
+// 		my_error_innodb(error,
+// 				table_share->table_name.str,
+// 				prebuilt->table->flags);
+// 	}
+// 
+// 	/* n_ref_count must be 1, or 2 when purge
+// 	happens to be executing on this very table. */
+// 	DBUG_ASSERT(ctx->indexed_table == prebuilt->table
+// 		    || prebuilt->table->n_ref_count - 1 <= 1);
+// 	prebuilt->trx->error_info = NULL;
+// 	ctx->trx->error_state = DB_SUCCESS;
+// 
+// 	DBUG_RETURN(true);
 }

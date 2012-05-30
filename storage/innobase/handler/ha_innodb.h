@@ -223,6 +223,20 @@ class ha_innobase: public handler
 			       uint num_of_keys);
 	int final_drop_index(TABLE *table_arg);
 	/** @} */
+
+    bool
+    ha_innobase::check_if_supported_inplace_alter(
+        /*==========================================*/
+        THD                     *thd,
+        TABLE                   *table,
+        Alter_inplace_info      *inplace_info
+    );
+
+	
+	bool inplace_alter_table(
+		TABLE*			altered_table,
+		Alter_inplace_info*	ha_alter_info);
+
 	bool check_if_incompatible_data(HA_CREATE_INFO *info,
 					uint table_changes);
 };

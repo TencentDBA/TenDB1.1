@@ -6804,8 +6804,16 @@ opt_restrict:
 
 opt_place:
           /* empty */ {}
-        | AFTER_SYM ident { store_position_for_column($2.str); }
-        | FIRST_SYM  { store_position_for_column(first_keyword); }
+        | AFTER_SYM ident 
+          { 
+            store_position_for_column($2.str); 
+            Lex->alter_info.flags |= ALTER_COLUMN_ORDER;
+          }
+        | FIRST_SYM  
+          { 
+            store_position_for_column(first_keyword);
+            Lex->alter_info.flags |= ALTER_COLUMN_ORDER; 
+          }
         ;
 
 opt_to:
