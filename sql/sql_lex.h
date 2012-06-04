@@ -208,6 +208,81 @@ enum enum_sql_command {
 */
 #define DESCRIBE_PARTITIONS	4
 
+enum tablespace_op_type
+{
+    NO_TABLESPACE_OP, DISCARD_TABLESPACE, IMPORT_TABLESPACE
+};
+
+
+enum enum_alter_table_change_level
+{
+    ALTER_TABLE_METADATA_ONLY= 0,
+    ALTER_TABLE_DATA_CHANGED= 1,
+    ALTER_TABLE_INDEX_CHANGED= 2
+};
+
+/**
+  @brief Parsing data for CREATE or ALTER TABLE.
+
+  This structure contains a list of columns or indexes to be created,
+  altered or dropped.
+*/
+
+class Alter_info
+{
+public:
+  // Columns and keys to be dropped.
+  List<Alter_drop>              drop_list;
+  // Columns for ALTER_COLUMN_CHANGE_DEFAULT.
+  List<Alter_column>            alter_list;
+  // List of keys, used by both CREATE and ALTER TABLE.
+  List<Key>                     key_list;
+  // List of columns, used by both CREATE and ALTER TABLE.
+  List<Create_field>            create_list;
+  // Type of ALTER TABLE operation.
+  uint                          flags;
+  // Enable or disable keys.
+  enum enum_enable_or_disable   keys_onoff;
+  enum tablespace_op_type       tablespace_op;
+  // List of partitions.
+  List<char>                    partition_names;
+  uint                          num_parts;
+  enum_alter_table_change_level change_level;
+  Create_field                 *datetime_field;
+  bool                          error_if_not_empty;
+
+
+  Alter_info() :
+    flags(0),
+    keys_onoff(LEAVE_AS_IS),
+    tablespace_op(NO_TABLESPACE_OP),
+    num_parts(0),
+    change_level(ALTER_TABLE_METADATA_ONLY),
+    datetime_field(NULL),
+    error_if_not_empty(FALSE)
+  {}
+
+  void reset()
+  {
+    drop_list.empty();
+    alter_list.empty();
+    key_list.empty();
+    create_list.empty();
+    flags= 0;
+    keys_onoff= LEAVE_AS_IS;
+    tablespace_op= NO_TABLESPACE_OP;
+    num_parts= 0;
+    partition_names.empty();
+    change_level= ALTER_TABLE_METADATA_ONLY;
+    datetime_field= 0;
+    error_if_not_empty= FALSE;
+  }
+  Alter_info(const Alter_info &rhs, MEM_ROOT *mem_root);
+private:
+  Alter_info &operator=(const Alter_info &rhs); // not implemented
+  Alter_info(const Alter_info &rhs);            // not implemented
+};
+
 #ifdef MYSQL_SERVER
 
 enum enum_sp_suid_behaviour
@@ -311,11 +386,6 @@ enum sub_select_type
 enum olap_type 
 {
   UNSPECIFIED_OLAP_TYPE, CUBE_TYPE, ROLLUP_TYPE
-};
-
-enum tablespace_op_type
-{
-  NO_TABLESPACE_OP, DISCARD_TABLESPACE, IMPORT_TABLESPACE
 };
 
 /* 
@@ -1035,12 +1105,7 @@ inline bool st_select_lex_unit::is_union ()
 // Set for ADD [COLUMN] FIRST | AFTER
 #define ALTER_COLUMN_ORDER       (1L << 24)
 
-enum enum_alter_table_change_level
-{
-  ALTER_TABLE_METADATA_ONLY= 0,
-  ALTER_TABLE_DATA_CHANGED= 1,
-  ALTER_TABLE_INDEX_CHANGED= 2
-};
+
 
 
 /**
@@ -1057,69 +1122,6 @@ private:
 public:
   void operator = (enum_type v) { value = v; }
   operator enum_type () { return value; }
-};
-
-
-/**
-  @brief Parsing data for CREATE or ALTER TABLE.
-
-  This structure contains a list of columns or indexes to be created,
-  altered or dropped.
-*/
-
-class Alter_info
-{
-public:
-  // Columns and keys to be dropped.
-  List<Alter_drop>              drop_list;
-  // Columns for ALTER_COLUMN_CHANGE_DEFAULT.
-  List<Alter_column>            alter_list;
-  // List of keys, used by both CREATE and ALTER TABLE.
-  List<Key>                     key_list;
-  // List of columns, used by both CREATE and ALTER TABLE.
-  List<Create_field>            create_list;
-  // Type of ALTER TABLE operation.
-  uint                          flags;
-  // Enable or disable keys.
-  enum enum_enable_or_disable   keys_onoff;
-  enum tablespace_op_type       tablespace_op;
-  // List of partitions.
-  List<char>                    partition_names;
-  uint                          num_parts;
-  enum_alter_table_change_level change_level;
-  Create_field                 *datetime_field;
-  bool                          error_if_not_empty;
-
-
-  Alter_info() :
-    flags(0),
-    keys_onoff(LEAVE_AS_IS),
-    tablespace_op(NO_TABLESPACE_OP),
-    num_parts(0),
-    change_level(ALTER_TABLE_METADATA_ONLY),
-    datetime_field(NULL),
-    error_if_not_empty(FALSE)
-  {}
-
-  void reset()
-  {
-    drop_list.empty();
-    alter_list.empty();
-    key_list.empty();
-    create_list.empty();
-    flags= 0;
-    keys_onoff= LEAVE_AS_IS;
-    tablespace_op= NO_TABLESPACE_OP;
-    num_parts= 0;
-    partition_names.empty();
-    change_level= ALTER_TABLE_METADATA_ONLY;
-    datetime_field= 0;
-    error_if_not_empty= FALSE;
-  }
-  Alter_info(const Alter_info &rhs, MEM_ROOT *mem_root);
-private:
-  Alter_info &operator=(const Alter_info &rhs); // not implemented
-  Alter_info(const Alter_info &rhs);            // not implemented
 };
 
 struct st_sp_chistics
@@ -2853,4 +2855,8 @@ void my_missing_function_error(const LEX_STRING &token, const char *name);
 bool is_keyword(const char *name, uint len);
 
 #endif /* MYSQL_SERVER */
+
+
+
+
 #endif /* SQL_LEX_INCLUDED */

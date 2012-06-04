@@ -54,6 +54,40 @@ typedef struct st_innobase_share {
 						Innodb */
 } INNOBASE_SHARE;
 
+/*****************************************************************//**
+Normalizes a table name string. A normalized name consists of the
+database name catenated to '/' and table name. An example:
+test/mytable. On Windows normalization puts both the database name and the
+table name always to lower case if "set_lower_case" is set to TRUE. */
+void
+normalize_table_name_low(
+/*=====================*/
+	char*		norm_name,	/*!< out: normalized name as a
+					null-terminated string */
+	const char*	name,		/*!< in: table name string */
+	ibool		set_lower_case); /*!< in: TRUE if we want to set
+					name to lower case */
+
+/** Always normalize table name to lower case on Windows */
+#ifdef __WIN__
+#define normalize_table_name(norm_name, name)		\
+    normalize_table_name_low(norm_name, name, TRUE)
+#else
+#define normalize_table_name(norm_name, name)           \
+    normalize_table_name_low(norm_name, name, FALSE)
+#endif /* __WIN__ */
+
+/*********************************************************************//**
+Gets the InnoDB transaction handle for a MySQL handler object, creates
+an InnoDB transaction struct if the corresponding MySQL thread struct still
+lacks one.
+@return	InnoDB transaction handle */
+inline
+trx_t*
+check_trx_exists(
+/*=============*/
+	THD*	thd);	/*!< in: user thread handle */
+
 
 /** InnoDB B-tree index */
 struct dict_index_struct;
@@ -233,8 +267,9 @@ class ha_innobase: public handler
     );
 
 	
-	bool inplace_alter_table(
+	int inplace_alter_table(
 		TABLE*			altered_table,
+        TABLE*          tmp_table,
 		Alter_inplace_info*	ha_alter_info);
 
 	bool check_if_incompatible_data(HA_CREATE_INFO *info,

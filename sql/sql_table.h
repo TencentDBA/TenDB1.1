@@ -156,6 +156,7 @@ bool mysql_alter_table(THD *thd, char *new_db, char *new_name,
                        Alter_info *alter_info,
                        uint order_num, ORDER *order, bool ignore);
 bool mysql_compare_tables(TABLE *table,
+                          void  *inplace_info,
                           Alter_info *alter_info,
                           HA_CREATE_INFO *create_info,
                           uint order_num,

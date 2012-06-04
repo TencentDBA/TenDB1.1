@@ -2215,9 +2215,10 @@ public:
 
 
 
- virtual bool inplace_alter_table(TABLE *altered_table,
+ virtual int inplace_alter_table(TABLE *altered_table,
+                                  TABLE *tmp_table,
                                   Alter_inplace_info *ha_alter_info)
- { return false; }
+ { return -1; }
 
 
  /**
@@ -2245,10 +2246,11 @@ public:
     Public function wrapping the actual handler call.
     @see inplace_alter_table()
  */
- bool ha_inplace_alter_table(TABLE *altered_table,
+ int ha_inplace_alter_table(TABLE *altered_table,
+                             TABLE *tmp_table,
                              Alter_inplace_info *ha_alter_info)
  {
-   return inplace_alter_table(altered_table, ha_alter_info);
+   return inplace_alter_table(altered_table, tmp_table, ha_alter_info);
  }
 
 
