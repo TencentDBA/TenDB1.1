@@ -21,8 +21,10 @@ this program; if not, write to the Free Software Foundation, Inc.,
 Smart ALTER TABLE
 *******************************************************/
 
+
 #include <unireg.h>
 #include <mysqld_error.h>
+#include <sql_class.h>
 #include <sql_lex.h>                            // SQLCOM_CREATE_INDEX
 #include <mysql/innodb_priv.h>
 
@@ -40,6 +42,7 @@ extern "C" {
 }
 
 #include "ha_innodb.h"
+
 
 /*************************************************************//**
 Copies an InnoDB column to a MySQL field.  This function is
@@ -1411,19 +1414,162 @@ static const Alter_inplace_info::HA_ALTER_FLAGS INNOBASE_ONLINE_OPERATIONS
 | Alter_inplace_info::DROP_FOREIGN_KEY_FLAG
 | Alter_inplace_info::ALTER_COLUMN_NAME_FLAG;
 
-bool
+
+ulint
+innodbase_fill_col_info(
+    trx_t               *trx,
+    dict_col_t          *col,
+    dict_table_t        *table,
+    TABLE               *tmp_table,
+    ulint               field_idx
+)
+{
+    ulint		col_type;
+    ulint		col_len;
+    ulint		nulls_allowed;
+    ulint		unsigned_type;
+    ulint		binary_type;
+    ulint		long_true_varchar;
+    ulint		charset_no;
+    ulint       error = DB_SUCCESS;
+    ulint       prtype;
+
+    Field               *field;
+
+    DBUG_ENTER("innodbase_fill_col_info");
+
+    field = tmp_table->field[field_idx];
+
+    col_type = get_innobase_type_from_mysql_type(&unsigned_type, field);
+
+    if (!col_type) {
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "Error alter table '%s' with add"
+            "column '%s'. Please check its "
+            "column type and try to re-create "
+            "the table with an appropriate "
+            "column type.",
+            table->name, (char*) field->field_name);
+        
+        error = DB_ERROR;
+        goto err;
+    }
+
+    if (field->null_ptr) {
+        nulls_allowed = 0;
+    } else {
+        nulls_allowed = DATA_NOT_NULL;
+    }
+
+    if (field->binary()) {
+        binary_type = DATA_BINARY_TYPE;
+    } else {
+        binary_type = 0;
+    }
+
+    charset_no = 0;
+
+    if (dtype_is_string_type(col_type)) {
+
+        charset_no = (ulint)field->charset()->number;
+
+        if (UNIV_UNLIKELY(charset_no >= 256)) {
+            /* in data0type.h we assume that the
+            number fits in one byte in prtype */
+            push_warning_printf(
+                (THD*) trx->mysql_thd,
+                MYSQL_ERROR::WARN_LEVEL_WARN,
+                ER_CANT_CREATE_TABLE,
+                "In InnoDB, charset-collation codes"
+                " must be below 256."
+                " Unsupported code %lu.",
+                (ulong) charset_no);
+            DBUG_RETURN(ER_CANT_CREATE_TABLE);
+        }
+    }
+
+    ut_a(field->type() < 256); /* we assume in dtype_form_prtype()
+                               that this fits in one byte */
+    col_len = field->pack_length();
+
+    /* The MySQL pack length contains 1 or 2 bytes length field
+    for a true VARCHAR. Let us subtract that, so that the InnoDB
+    column length in the InnoDB data dictionary is the real
+    maximum byte length of the actual data. */
+
+    long_true_varchar = 0;
+
+    if (field->type() == MYSQL_TYPE_VARCHAR) {
+        col_len -= ((Field_varstring*)field)->length_bytes;
+
+        if (((Field_varstring*)field)->length_bytes == 2) {
+            long_true_varchar = DATA_LONG_TRUE_VARCHAR;
+        }
+    }
+
+    /* First check whether the column to be added has a
+    system reserved name. */
+    if (dict_col_name_is_reserved(field->field_name)){
+        my_error(ER_WRONG_COLUMN_NAME, MYF(0),
+            field->field_name);
+
+        error = DB_ERROR;
+        goto err;
+    }
+
+    
+
+    prtype = dtype_form_prtype((ulint)field->type() | nulls_allowed | unsigned_type
+                                    | binary_type | long_true_varchar,
+                                charset_no);
+
+    dict_mem_fill_column_struct(col, field_idx, col_type, prtype, col_len);
+
+//     dict_mem_table_add_col(table, table->heap,
+//         (char*) field->field_name,
+//         col_type,
+//         dtype_form_prtype((ulint)field->type() | nulls_allowed | unsigned_type
+//                                         | binary_type | long_true_varchar,
+//         charset_no),
+//         col_len}
+
+err:
+    DBUG_RETURN(error);
+}
+
+
+/*
+
+Return
+    true : Error
+    false : success
+*/
+ulint
 innobase_add_columns_simple(
     /*===================*/
-    const TABLE_SHARE*	table_share,
-    row_prebuilt_t*		prebuilt,
+    mem_heap_t*         heap,
     trx_t*			    trx,
+    dict_table_t*       table,
+    TABLE*              tmp_table,
     Alter_inplace_info* inplace_info
 )
 {
     pars_info_t*	info;
-    ulint   		err;
+    ulint   		error;
+    Alter_info*     alter_info = static_cast<Alter_info*>(inplace_info->alter_info);
+    Create_field*   cfield;
+    List_iterator<Create_field> def_it(alter_info->create_list);
+    ulint           prev_lock_idx = -1;
+    ulint           idx = 0;
+    ulint           lock_idx = 0;
+    Field           *field;
+    dict_col_t      *col = NULL;
+    ulint           n_add = 0;
 
-    DBUG_ENTER("innobase_rename_column");
+    DBUG_ENTER("innobase_add_columns_simple");
 
     DBUG_ASSERT(trx_get_dict_operation(trx) == TRX_DICT_OP_INDEX);
     ut_ad(trx->dict_operation_lock_mode == RW_X_LATCH);
@@ -1432,10 +1578,147 @@ innobase_add_columns_simple(
     ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_EX));
 #endif /* UNIV_SYNC_DEBUG */
 
-    info = pars_info_create();
+    col = (dict_col_t *)mem_heap_alloc(heap, sizeof(dict_col_t));
+    if (col == NULL)
+    {
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "mem_heap_alloc error %s %d", __FILE__, __LINE__);
 
+        goto err;
+    }
 
-    return true;
+    def_it.rewind();
+    while (cfield =def_it++)
+    {
+        //new field，并且是最后若干列
+        if (!cfield->field)
+        {
+            ut_ad(!cfield->change && !cfield->after);
+
+            if (cfield->change || cfield->after)
+            {
+                push_warning_printf(
+                    (THD*) trx->mysql_thd,
+                    MYSQL_ERROR::WARN_LEVEL_WARN,
+                    ER_CANT_CREATE_TABLE,
+                    "!cfield->change && !cfield->after error %s %d", __FILE__, __LINE__);
+
+                //for safe
+                goto err;
+            }
+
+            lock_idx = idx;
+            ut_ad( prev_lock_idx == -1 || lock_idx == prev_lock_idx + 1);
+            
+            if (prev_lock_idx != -1 && lock_idx != prev_lock_idx + 1)
+            {
+                //for safe
+                push_warning_printf(
+                    (THD*) trx->mysql_thd,
+                    MYSQL_ERROR::WARN_LEVEL_WARN,
+                    ER_CANT_CREATE_TABLE,
+                    "prev_lock_idx != -1 && lock_idx != prev_lock_idx + 1 %s %d", __FILE__, __LINE__);
+
+                goto err;
+            }
+            
+            prev_lock_idx = lock_idx;
+
+            field = tmp_table->field[idx];
+
+            error = innodbase_fill_col_info(trx, col, table, tmp_table, idx);
+
+            if (error != DB_SUCCESS)
+            {
+                goto err;
+            }
+
+            info = pars_info_create();  /* que_eval_sql执行完会释放 */
+
+            pars_info_add_ull_literal(info, "table_id", table->id);
+            pars_info_add_int4_literal(info, "pos", col->ind);
+            pars_info_add_str_literal(info, "name", field->field_name);
+            pars_info_add_int4_literal(info, "mtype", col->mtype);
+            pars_info_add_int4_literal(info, "prtype", col->prtype);
+            pars_info_add_int4_literal(info, "len", col->len);
+        
+            /* SYS_COLUMNS(table_id, pos, name, mtype, prtype, len, prec) */
+            error = que_eval_sql(
+                info,
+                "PROCEDURE ADD_SYS_COLUMNS_PROC () IS\n"
+                "BEGIN\n"
+                "INSERT INTO SYS_COLUMNS VALUES(:table_id, :pos,\n"
+                ":name, :mtype, :prtype, :len, 0);\n"
+                "END;\n",
+                FALSE, trx);
+
+            DBUG_EXECUTE_IF("ib_add_column_error",
+                error = DB_OUT_OF_FILE_SPACE;);
+
+            if (error != DB_SUCCESS)
+            {
+                //for safe
+                push_warning_printf(
+                    (THD*) trx->mysql_thd,
+                    MYSQL_ERROR::WARN_LEVEL_WARN,
+                    ER_CANT_CREATE_TABLE,
+                    "ADD_SYS_COLUMNS_PROC error %s %d field_name(%s)", __FILE__, __LINE__, field->field_name);
+
+                goto err;
+            }
+
+            n_add++;
+        }
+        else
+        {
+            ut_ad(tmp_table->field[idx]->is_equal(cfield));
+
+            if (!tmp_table->field[idx]->is_equal(cfield))
+            {
+                //for safe
+                goto err;
+            }
+        }
+        idx ++;
+    }
+
+    info = pars_info_create();  /* que_eval_sql执行完会释放 */
+
+    ut_ad(dict_table_get_n_cols(table) - DATA_N_SYS_COLS + n_add == tmp_table->s->fields);
+
+    ut_ad(dict_table_is_gcs(table));
+
+    pars_info_add_int4_literal(info, "n_col", tmp_table->s->fields | (1 << 31) | (1 << 30));
+    pars_info_add_str_literal(info, "table_name", table->name);
+    
+    /* 更新列数 */
+    error = que_eval_sql(
+        info,
+        "PROCEDURE UPDATE_SYS_TABLES_N_COLS_PROC () IS\n"
+        "BEGIN\n"
+        "UPDATE SYS_TABLES SET N_COLS = :n_col \n"
+        "WHERE NAME = :table_name;\n"
+        "END;\n",
+        FALSE, trx);
+
+    if (error != DB_SUCCESS)
+    {
+        //for safe
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "UPDATE_SYS_TABLES_N_COLS_PROC error %s %d table_name(%s)", __FILE__, __LINE__, table->name);
+
+        goto err;
+    }
+
+err:
+    DBUG_RETURN(error);
+    
 }
 
 /** Rename a column.
@@ -1651,114 +1934,140 @@ ha_innobase::check_if_supported_inplace_alter(
     }
     
     
-    DBUG_RETURN(false);
+    DBUG_RETURN(true);
 }
-
 
 UNIV_INTERN
-bool
+int
 ha_innobase::inplace_alter_table(
 /*=============================*/
-	TABLE*			altered_table,
-	Alter_inplace_info*	ha_alter_info)
+	TABLE*			        table,
+    TABLE*                  tmp_table,
+	Alter_inplace_info*	    ha_alter_info)
 {
+    trx_t*                  user_trx;
+    THD*			        thd;
+    trx_t*                  trx;
+    ulint                   err = FALSE;
+    char                    norm_name[1000];
+    dict_table_t            *dict_table;
+    mem_heap_t*             heap;
 
-    return false;
+    DBUG_ENTER("inplace_alter_table");
 
-// 	dberr_t	error;
-// 
-// 	DBUG_ENTER("inplace_alter_table");
-// #ifdef UNIV_SYNC_DEBUG
-// 	ut_ad(!rw_lock_own(&dict_operation_lock, RW_LOCK_EX));
-// 	ut_ad(!rw_lock_own(&dict_operation_lock, RW_LOCK_SHARED));
-// #endif /* UNIV_SYNC_DEBUG */
-// 
-// 	if (!(ha_alter_info->handler_flags & INNOBASE_INPLACE_CREATE)) {
-// 		DBUG_RETURN(false);
+    thd = ha_thd();
+
+    DBUG_ASSERT(thd == this->user_thd);
+
+    DBUG_ASSERT(check_if_supported_inplace_alter(thd, table, ha_alter_info));
+
+    /* Get the transaction associated with the current thd, or create one
+	if not yet created */
+
+    normalize_table_name(norm_name, table->s->normalized_path.str);
+
+    dict_table = dict_table_get(norm_name, FALSE);
+    if (dict_table == NULL)
+    {
+        push_warning_printf(
+            (THD*) thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "table %s doesn't exist %s %d", norm_name, __FILE__, __LINE__);
+
+        goto error;
+    }
+
+    heap = mem_heap_create(1024);
+    if (heap == NULL)
+    {
+        push_warning_printf(
+            (THD*) thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "mem_heap_create error %s %d", __FILE__, __LINE__);
+
+        goto error;
+    }
+
+	user_trx = check_trx_exists(thd);
+
+	/* In case MySQL calls this in the middle of a SELECT query, release
+	possible adaptive hash latch to avoid deadlocks of threads */
+
+	trx_search_latch_release_if_reserved(user_trx);
+
+    trx_start_if_not_started(user_trx);
+
+	/* 创建一个后台事务，用于字典操作. */
+	trx = innobase_trx_allocate(thd);
+	trx_start_if_not_started(trx);
+    
+    /* Flag this transaction as a dictionary operation, so that
+	the data dictionary will be locked in crash recovery. */
+    trx_set_dict_operation(trx, TRX_DICT_OP_INDEX);
+
+    /* 全局字段锁 */
+    row_mysql_lock_data_dictionary(trx);
+
+    if (ha_alter_info->handler_flags == Alter_inplace_info::ADD_COLUMN_FLAG)  /* 仅加简单列操作 */
+    {
+        err = innobase_add_columns_simple(heap, trx, dict_table, tmp_table, ha_alter_info);
+    }
+    else 
+    {
+        ut_ad(FALSE);
+        //to do 暂时断言
+    }
+    
+    /* 成功就提交，否则回滚 */
+    if (err)
+        trx_commit_for_mysql(trx);
+    else
+        trx_rollback_for_mysql(trx);
+
+    /* 锁什么时候释放 */
+
+    dict_table_remove_from_cache(dict_table);
+
+    row_mysql_unlock_data_dictionary(trx);
+
+    trx_free_for_mysql(trx);
+
+    trx_commit_for_mysql(user_trx);
+
+	/* Flush the log to reduce probability that the .frm files and
+	the InnoDB data dictionary get out-of-sync if the user runs
+	with innodb_flush_log_at_trx_commit = 0 */
+
+	log_buffer_flush_to_disk();
+
+	/* Tell the InnoDB server that there might be work for
+	utility threads: */
+
+	srv_active_wake_master_thread();
+
+    mem_heap_free(heap);
+
+// func_exit:
+// 	if (err == 0 && (ha_alter_info->create_info->used_fields
+// 			 & HA_CREATE_USED_AUTO)) {
+// 		dict_table_autoinc_lock(prebuilt->table);
+// 		dict_table_autoinc_initialize(
+// 			prebuilt->table,
+// 			ha_alter_info->create_info->auto_increment_value);
+// 		dict_table_autoinc_unlock(prebuilt->table);
 // 	}
 // 
-// 	class ha_innobase_inplace_ctx*	ctx
-// 		= static_cast<class ha_innobase_inplace_ctx*>
-// 		(ha_alter_info->handler_ctx);
-// 
-// 	DBUG_ASSERT(ctx);
-// 	DBUG_ASSERT(ctx->trx);
-// 
-// 	if (prebuilt->table->ibd_file_missing
-// 	    || prebuilt->table->tablespace_discarded) {
-// 		goto all_done;
+// ret:
+// 	if (err == 0) {
+// 		MONITOR_ATOMIC_DEC(MONITOR_PENDING_ALTER_TABLE);
 // 	}
-// 
-// 	/* Read the clustered index of the table and build
-// 	indexes based on this information using temporary
-// 	files and merge sort. */
-// 	DBUG_EXECUTE_IF("innodb_OOM_inplace_alter",
-// 			error = DB_OUT_OF_MEMORY; goto oom;);
-// 	error = row_merge_build_indexes(
-// 		prebuilt->trx,
-// 		prebuilt->table, ctx->indexed_table,
-// 		ctx->online,
-// 		ctx->add, ctx->add_key_numbers, ctx->num_to_add, table);
-// #ifndef DBUG_OFF
-// oom:
-// #endif /* !DBUG_OFF */
-// 
-// 	/* After an error, remove all those index definitions
-// 	from the dictionary which were defined. */
-// 
-// 	switch (error) {
-// 		KEY*	dup_key;
-// 	all_done:
-// 	case DB_SUCCESS:
-// 		ut_d(mutex_enter(&dict_sys->mutex));
-// 		ut_d(dict_table_check_for_dup_indexes(
-// 			     prebuilt->table, CHECK_PARTIAL_OK));
-// 		ut_d(mutex_exit(&dict_sys->mutex));
-// 		/* n_ref_count must be 1, or 2 when purge
-// 		happens to be executing on this very table. */
-// 		DBUG_ASSERT(ctx->indexed_table == prebuilt->table
-// 			    || prebuilt->table->n_ref_count - 1 <= 1);
-// 		DEBUG_SYNC(user_thd, "innodb_after_inplace_alter_table");
-// 		DBUG_RETURN(false);
-// 	case DB_DUPLICATE_KEY:
-// 		if (prebuilt->trx->error_key_num == ULINT_UNDEFINED) {
-// 			/* This should be the hidden index on FTS_DOC_ID. */
-// 			dup_key = NULL;
-// 		} else {
-// 			DBUG_ASSERT(prebuilt->trx->error_key_num
-// 				    < ha_alter_info->key_count);
-// 			dup_key = &ha_alter_info->key_info_buffer[
-// 				prebuilt->trx->error_key_num];
-// 		}
-// 		print_keydup_error(dup_key);
-// 		break;
-// 	case DB_ONLINE_LOG_TOO_BIG:
-// 		DBUG_ASSERT(ctx->online);
-// 		my_error(ER_INNODB_ONLINE_LOG_TOO_BIG, MYF(0),
-// 			 (prebuilt->trx->error_key_num == ULINT_UNDEFINED)
-// 			 ? FTS_DOC_ID_INDEX_NAME
-// 			 : ha_alter_info->key_info_buffer[
-// 				 prebuilt->trx->error_key_num].name);
-// 		break;
-// 	case DB_INDEX_CORRUPT:
-// 		my_error(ER_INDEX_CORRUPT, MYF(0),
-// 			 (prebuilt->trx->error_key_num == ULINT_UNDEFINED)
-// 			 ? FTS_DOC_ID_INDEX_NAME
-// 			 : ha_alter_info->key_info_buffer[
-// 				 prebuilt->trx->error_key_num].name);
-// 		break;
-// 	default:
-// 		my_error_innodb(error,
-// 				table_share->table_name.str,
-// 				prebuilt->table->flags);
-// 	}
-// 
-// 	/* n_ref_count must be 1, or 2 when purge
-// 	happens to be executing on this very table. */
-// 	DBUG_ASSERT(ctx->indexed_table == prebuilt->table
-// 		    || prebuilt->table->n_ref_count - 1 <= 1);
-// 	prebuilt->trx->error_info = NULL;
-// 	ctx->trx->error_state = DB_SUCCESS;
-// 
-// 	DBUG_RETURN(true);
+// 	DBUG_RETURN(err != 0);
+
+error:
+    err = convert_error_code_to_mysql(err, 0, NULL);
+
+    DBUG_RETURN(err);
 }
+
