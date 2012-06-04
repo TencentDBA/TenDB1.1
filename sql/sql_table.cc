@@ -4294,7 +4294,7 @@ bool mysql_create_table_no_lock(THD *thd,
       THD::temporary_tables list.
     */
 
-    TABLE *table= open_table_uncached(thd, path, db, table_name, TRUE);
+    TABLE *table= open_table_uncached(thd, path, db, table_name, TRUE, true);
 
     if (!table)
     {
@@ -4850,6 +4850,7 @@ is_index_maintenance_unique (TABLE *table, Alter_info *alter_info)
 
 bool
 mysql_compare_tables(TABLE *table,
+                     void*    inplace_info_arg,
                      Alter_info *alter_info,
                      HA_CREATE_INFO *create_info,
                      uint order_num,
@@ -4873,6 +4874,7 @@ mysql_compare_tables(TABLE *table,
   */
   bool varchar= create_info->varchar;
   bool not_nullable= true;
+  Alter_inplace_info    *inplace_info = static_cast<Alter_inplace_info*>(inplace_info_arg);
   DBUG_ENTER("mysql_compare_tables");
 
   /*
@@ -4893,7 +4895,11 @@ mysql_compare_tables(TABLE *table,
   Alter_info tmp_alter_info(*alter_info, thd->mem_root);
   uint db_options= 0; /* not used */
 
-  /* Create the prepared information. */
+  /*
+  Create the prepared information.  
+  NOTE: here the create_info will change: varchar collumns' length would recomputed
+  */
+
   if (mysql_prepare_create_table(thd, create_info,
                                  &tmp_alter_info,
                                  (table->s->tmp_table != NO_TMP_TABLE),
@@ -4934,7 +4940,7 @@ mysql_compare_tables(TABLE *table,
     prior to 5.0 branch.
     See BUG#6236.
   */
-  if ( /*table->s->fields != alter_info->create_list.elements ||  */                 /* 增删列的情况,如果是快速加字段/删字段(todo),则字段数量不匹配 */
+  if (table->s->fields != alter_info->create_list.elements && inplace_info == NULL ||                   /* 增删列，这里修改下 to do */
       table->s->db_type() != create_info->db_type ||                            /* Engine发生改变 */
       table->s->tmp_table ||                                                    /* 不能是临时表 */
       create_info->used_fields & HA_CREATE_USED_ENGINE ||
@@ -5318,36 +5324,41 @@ bool fill_alter_inplace_info(
             /*
             Check if type of column has changed to some incompatible type.
             */
-            switch (field->is_equal(new_field))
-            {
-            case IS_EQUAL_NO:
-                /* New column type is incompatible with old one. */
-                ha_alter_info->handler_flags|= Alter_inplace_info::ALTER_COLUMN_TYPE_FLAG;
-                break;
-            case IS_EQUAL_YES:
-                /*
-                New column is the same as the old one or the fully compatible with
-                it (for example, ENUM('a','b') was changed to ENUM('a','b','c')).
-                Such a change if any can ALWAYS be carried out by simply updating
-                data-dictionary without even informing storage engine.
-                No flag is set in this case.
-                */
-                break;
-            case IS_EQUAL_PACK_LENGTH:
-                /*
-                New column type differs from the old one, but has compatible packed
-                data representation. Depending on storage engine, such a change can
-                be carried out by simply updating data dictionary without changing
-                actual data (for example, VARCHAR(300) is changed to VARCHAR(400)).
-                */
-                ha_alter_info->handler_flags|= Alter_inplace_info::
-                    ALTER_COLUMN_EQUAL_PACK_LENGTH_FLAG;
-                break;
-            default:
-                DBUG_ASSERT(0);
-                /* Safety. */
-                ha_alter_info->handler_flags|= Alter_inplace_info::ALTER_COLUMN_TYPE_FLAG;
-            }
+            /* 
+            以下判断均屏蔽掉了,原因是: 在判断varchar字段的时候,由于暂时还没有执行mysql_prepare_create_table操作,
+            alter_info->create_list 里面的的varchar字段的length判断是不准确的.! 这个地方可能会有隐患,mark!
+            
+            */
+            //switch (field->is_equal(new_field))
+            //{
+            //case IS_EQUAL_NO:
+            //    /* New column type is incompatible with old one. */
+            //    //  ha_alter_info->handler_flags|= Alter_inplace_info::ALTER_COLUMN_TYPE_FLAG;
+            //    break;
+            //case IS_EQUAL_YES:
+            //    /*
+            //    New column is the same as the old one or the fully compatible with
+            //    it (for example, ENUM('a','b') was changed to ENUM('a','b','c')).
+            //    Such a change if any can ALWAYS be carried out by simply updating
+            //    data-dictionary without even informing storage engine.
+            //    No flag is set in this case.
+            //    */
+            //    break;
+            //case IS_EQUAL_PACK_LENGTH:
+            //    /*
+            //    New column type differs from the old one, but has compatible packed
+            //    data representation. Depending on storage engine, such a change can
+            //    be carried out by simply updating data dictionary without changing
+            //    actual data (for example, VARCHAR(300) is changed to VARCHAR(400)).
+            //    */
+            //    ha_alter_info->handler_flags|= Alter_inplace_info::
+            //        ALTER_COLUMN_EQUAL_PACK_LENGTH_FLAG;
+            //    break;
+            //default:
+            //    DBUG_ASSERT(0);
+            //    /* Safety. */
+            //    ha_alter_info->handler_flags|= Alter_inplace_info::ALTER_COLUMN_TYPE_FLAG;
+            //}
 
             /* Check if field was renamed */
             if (my_strcasecmp(system_charset_info, field->field_name,
@@ -5871,8 +5882,9 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     already check the default values of new added column.
     here we donnot check change_level,for normal add column ,the change level is METADATA_ONLY
     */
-    if (add_column_simple_flag /*&& alter_info->change_level != ALTER_TABLE_METADATA_ONLY*/)
-    {
+    if (add_column_simple_flag && inplace_info_out && alter_info->change_level == ALTER_TABLE_METADATA_ONLY)
+    {    
+        bool                    support_flag = false;
         /* 进一步检查以下情况 
         
         1. 是否只有add column操作，根据alter_info->flags，以及其他列表是否为空等，不能指定任何的create_options, --done
@@ -5906,19 +5918,15 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
         if (inplace_info != NULL &&
             !fill_alter_inplace_info(thd, table, FALSE, inplace_info))
         {
-            if (table->file->check_if_supported_inplace_alter(thd, table, inplace_info))
-            {
-                alter_info->change_level = ALTER_TABLE_METADATA_ONLY;
-            }
 
+            support_flag = table->file->check_if_supported_inplace_alter(thd, table, inplace_info);
         }   
 
         *inplace_info_out = inplace_info;
         
         
-        /* 如果change_level不是METADATA_ONLY,则清空inplace_info信息 */
-        if (alter_info->change_level != ALTER_TABLE_METADATA_ONLY  && 
-            *inplace_info_out != NULL )
+        if (!support_flag && 
+            *inplace_info_out != NULL)
         {
             delete *inplace_info_out;
 
@@ -5946,13 +5954,14 @@ bool
 mysql_inplace_alter_table(
     THD                 *thd,
     TABLE               *table,
+    TABLE               *tmp_table,
     Alter_inplace_info  *inplace_info
 )
 {
     DBUG_ENTER("mysql_inplace_alter_table");
 
     
-    if (table->file->ha_inplace_alter_table(table, inplace_info))
+    if (table->file->ha_inplace_alter_table(table, tmp_table, inplace_info))
     {
         //error 
         DBUG_RETURN(true);
@@ -6434,7 +6443,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     {
         enum_alter_table_change_level need_copy_table_res;
         /* Check how much the tables differ. */
-        if (mysql_compare_tables(table, alter_info,
+        if (mysql_compare_tables(table, inplace_info, alter_info,
             create_info, order_num,
             &need_copy_table_res,
             &key_info_buffer,
@@ -6703,6 +6712,8 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     We don't log the statement, it will be logged later.
     */
     tmp_disable_binlog(thd);
+
+    /* 创建临时表frm文件 */
     error= mysql_create_table_no_lock(thd, new_db, tmp_name,
         create_info,
         alter_info,
@@ -6734,7 +6745,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
             build_table_filename(path, sizeof(path) - 1, new_db, tmp_name, "",
                 FN_IS_TMP);
             /* Open our intermediate table. */
-            new_table= open_table_uncached(thd, path, new_db, tmp_name, TRUE);
+            new_table= open_table_uncached(thd, path, new_db, tmp_name, TRUE, true);
         }
         if (!new_table)
             goto err_new_table_cleanup;
@@ -6768,7 +6779,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
             alter_info->keys_onoff,
             alter_info->error_if_not_empty);
     }
-    else
+    else if (!inplace_info)
     {
         /*
         Ensure that we will upgrade the metadata lock if
@@ -6794,7 +6805,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         goto err_new_table_cleanup;
 
     /* If we did not need to copy, we might still need to add/drop indexes. */
-    if (! new_table)
+    if (! new_table && !inplace_info)
     {
         uint          *key_numbers;
         uint          *keyno_p;
@@ -6983,7 +6994,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         goto err_new_table_cleanup;
     }
 
-    if (inplace_info != NULL && need_copy_table == ALTER_TABLE_METADATA_ONLY)
+    if (inplace_info != NULL)
     {
         /*
         旧表已经加X锁,临时表已经生成,此处调用innodb底层做快速alter操作
@@ -6994,13 +7005,33 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         1.上层开始做rename操作,将旧表rename为临时表,新表rename为旧表名字
         
         */
-        if (mysql_inplace_alter_table(thd, table, inplace_info))
+        char filename[NAME_LEN+1];
+        int  filename_len;
+
+        DBUG_ASSERT(need_copy_table == ALTER_TABLE_METADATA_ONLY);
+
+        filename_len = build_table_filename(filename, sizeof(filename) - 1, new_db, tmp_name, "", FN_IS_TMP);
+
+        TABLE*  tmp_table = find_temporary_table(thd, filename, filename_len);
+        if (!tmp_table)
+        {
+            tmp_table = open_table_uncached(thd, filename, new_db, tmp_name, TRUE, false);
+            DBUG_ASSERT(tmp_table != NULL);
+        }
+
+        if (mysql_inplace_alter_table(thd, table, tmp_table, inplace_info))
         {
             /* 错误处理，参考5.6 */
-            //return true;
+            /*
+            rm tmp table
+            delete inplace_info   
+            */  
+            if(inplace_info){
+                   delete (Alter_inplace_info *)inplace_info;
+            }
             
-
-            DBUG_RETURN(TRUE);
+            //DBUG_RETURN(TRUE);
+            goto err_new_table_cleanup;
         }
 
     }
@@ -7151,7 +7182,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         char path[FN_REFLEN];
         TABLE *t_table;
         build_table_filename(path + 1, sizeof(path) - 1, new_db, table_name, "", 0);
-        t_table= open_table_uncached(thd, path, new_db, tmp_name, FALSE);
+        t_table= open_table_uncached(thd, path, new_db, tmp_name, FALSE, true);
         if (t_table)
         {
             intern_close_table(t_table);
