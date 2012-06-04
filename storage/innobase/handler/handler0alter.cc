@@ -1633,8 +1633,22 @@ ha_innobase::check_if_supported_inplace_alter(
 {
     DBUG_ENTER("check_if_supported_inplace_alter");
 
-    //to do
+    //to do: check gcs,
 
+    HA_CREATE_INFO * create_info = inplace_info->create_info;
+
+    /* 如果行格式不是GCS,或者创建的行格式与底层的行格式不一样,则不能直接快速alter */
+    if(create_info->used_fields & HA_CREATE_USED_ROW_FORMAT &&
+        create_info->row_type != get_row_type() &&
+        ROW_TYPE_GCS != get_row_type()){
+            DBUG_RETURN(true);
+    }
+
+    
+    /* 只有增加字段的语句 */
+    if(inplace_info->handler_flags & ~(Alter_inplace_info::ADD_COLUMN_FLAG)){
+        DBUG_RETURN(true);
+    }
     
     
     DBUG_RETURN(false);

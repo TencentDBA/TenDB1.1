@@ -4934,7 +4934,7 @@ mysql_compare_tables(TABLE *table,
     prior to 5.0 branch.
     See BUG#6236.
   */
-  if (table->s->fields != alter_info->create_list.elements ||                   /* 增删列，这里修改下 to do */
+  if ( /*table->s->fields != alter_info->create_list.elements ||  */                 /* 增删列的情况,如果是快速加字段/删字段(todo),则字段数量不匹配 */
       table->s->db_type() != create_info->db_type ||                            /* Engine发生改变 */
       table->s->tmp_table ||                                                    /* 不能是临时表 */
       create_info->used_fields & HA_CREATE_USED_ENGINE ||
@@ -4955,11 +4955,16 @@ mysql_compare_tables(TABLE *table,
   /* 检查是否能够快速加字段 
     1. 必须innodb
     2. 必须GCS格式
-    3. 必须只加字段（1个或多个），暂时实现一个，多个评估实现难度
-    4. 
-  
+    3. 必须只加字段（1个或多个），暂时实现一个，多个评估实现难度(添加一个字段和多个字段差不多)
+    4.   
   */
-
+  enum row_type tmp_row_type = table->file->get_row_type();
+  if((create_info->row_type != ROW_TYPE_GCS && create_info->row_type != ROW_TYPE_DEFAULT)||
+      tmp_row_type != ROW_TYPE_GCS ||
+      DB_TYPE_INNODB != ha_legacy_type(ha_checktype(thd,ha_legacy_type(create_info->db_type),0,0)) ){
+        *need_copy_table = ALTER_TABLE_DATA_CHANGED;
+        DBUG_RETURN(0);
+  }
 
 
   /*
@@ -5374,7 +5379,10 @@ bool fill_alter_inplace_info(
             */
             if (field->field_index != new_field_index)
                 ha_alter_info->handler_flags|= 
-                Alter_inplace_info::ALTER_COLUMN_ORDER_FLAG;                        /* 考虑加一列删一列的情况，可能有ALTER_ORDER但并不满足这个条件 */
+                Alter_inplace_info::ALTER_COLUMN_ORDER_FLAG;                       
+            /* 考虑加一列删一列的情况，可能有ALTER_ORDER但并不满足这个条件 */
+            /* 加一列如果没有after/before的话,应该不会有改变哦.删除一列一定会设置这个值? */
+
         }
         else
         {
@@ -5473,7 +5481,9 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     KEY *key_info=table->key_info;
     bool rc= TRUE;
     
+    /* flag for check if can fast alter table add column*/
     bool add_column_simple_flag = true;                                     /* 初始化为true */
+
 
     DBUG_ENTER("mysql_prepare_alter_table");
 
@@ -5507,6 +5517,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
 
     /*
     First collect all fields from table which isn't in drop_list
+    push fields to new_create_list,check drop_list and alter_list
     */
     Field **f_ptr,*field;
     for (f_ptr=table->field ; (field= *f_ptr) ; f_ptr++)
@@ -5539,7 +5550,11 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
             when new version of the table has the same structure as the old
             one.
             */
-            alter_info->change_level= ALTER_TABLE_DATA_CHANGED;
+             
+            alter_info->change_level= ALTER_TABLE_DATA_CHANGED;    
+
+            /* TODO: 删除列,不修改数据的需求可以在这里实现 */
+
             continue;
         }
         /* Check if field is changed */
@@ -5614,9 +5629,23 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
             alter_info->datetime_field= def;
             alter_info->error_if_not_empty= TRUE;
         }
+        
+        /** 
+            fast add column cannot support NOT_NULL yet 
+            how to deal with timestamp/date/datetime(default not null)?
+        */
+        if(def->flags & NOT_NULL_FLAG ){
+            add_column_simple_flag = false;
+        }
+
+        /** fast add column cannot support DEFAULT VALUE yet */
+        if(def->def){
+            add_column_simple_flag = false;
+        }
+
         if (!def->after)
             new_create_list.push_back(def);
-        else if (def->after == first_keyword)
+        else if (def->after == first_keyword)   //alter table add column xxx first
         {
             new_create_list.push_front(def);
             /*
@@ -5624,6 +5653,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
             as it always changes table data.
             */
             alter_info->change_level= ALTER_TABLE_DATA_CHANGED;
+            /* 快速修改列顺序在这儿可以做*/
         }
         else
         {
@@ -5809,7 +5839,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
             alter_info->alter_list.head()->name);
         goto err;
     }
-
+    
     if (!create_info->comment.str)
     {
         create_info->comment.str= table->s->comment.str;
@@ -5836,20 +5866,32 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     rc= FALSE;
     alter_info->create_list.swap(new_create_list);
     alter_info->key_list.swap(new_key_list);
-err:
 
-    if (add_column_simple_flag && inplace_info_out && alter_info->change_level != ALTER_TABLE_METADATA_ONLY)
+    /* 
+    already check the default values of new added column.
+    here we donnot check change_level,for normal add column ,the change level is METADATA_ONLY
+    */
+    if (add_column_simple_flag /*&& alter_info->change_level != ALTER_TABLE_METADATA_ONLY*/)
     {
-        Alter_inplace_info*     inplace_info;
-
         /* 进一步检查以下情况 
         
-        1. 是否只有add column操作，根据alter_info->flags，以及其他列表是否为空等，不能指定任何的create_options
-        2. 不能含默认值，注意时间类型的处理
-        3. 是否临时表，分区表
-        4. 调用存储引擎接口判断，只有innodb实现这个接口，其他必定为返回FALSE，存储引擎会判断是否为GCS表等。
-         
+        1. 是否只有add column操作，根据alter_info->flags，以及其他列表是否为空等，不能指定任何的create_options, --done
+        2. 不能含默认值，注意时间类型的处理 --done
+        3. 是否临时表，分区表   --done
+        4. 调用存储引擎接口判断，只有innodb实现这个接口，其他必定为返回FALSE，存储引擎会判断是否为GCS表等。  --doing 
         */
+
+        if(alter_info->flags & ~(ALTER_ADD_COLUMN) ||          
+           create_info->options     ||    
+           (create_info->other_options & HA_LEX_CREATE_WITH_PARTITION)){    
+               /* 
+                1.no other alter op allowed 
+                2.no create options allowd,include HA_LEX_CREATE_TMP_TABLE
+                3.check if the  table is partition table 
+               */
+            goto err;
+        }      
+       
 
         //DBUG_ASSERT(alter_info->
 
@@ -5857,6 +5899,7 @@ err:
         // to do 
 
         // 检查完后，生成alter_inplace结构
+        Alter_inplace_info*     inplace_info;
 
         inplace_info = new Alter_inplace_info(create_info, alter_info, thd->lex->ignore);
 
@@ -5867,18 +5910,23 @@ err:
             {
                 alter_info->change_level = ALTER_TABLE_METADATA_ONLY;
             }
+
         }   
 
         *inplace_info_out = inplace_info;
         
-        if (alter_info->change_level != ALTER_TABLE_METADATA_ONLY && 
-            *inplace_info_out != NULL)
+        
+        /* 如果change_level不是METADATA_ONLY,则清空inplace_info信息 */
+        if (alter_info->change_level != ALTER_TABLE_METADATA_ONLY  && 
+            *inplace_info_out != NULL )
         {
             delete *inplace_info_out;
 
             *inplace_info_out = NULL;
         }
     }
+
+err:
     
     DBUG_RETURN(rc);
 }
@@ -5909,6 +5957,7 @@ mysql_inplace_alter_table(
         //error 
         DBUG_RETURN(true);
     }
+
 
     DBUG_RETURN(false);
 }
@@ -6936,11 +6985,24 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
 
     if (inplace_info != NULL && need_copy_table == ALTER_TABLE_METADATA_ONLY)
     {
+        /*
+        旧表已经加X锁,临时表已经生成,此处调用innodb底层做快速alter操作
+        a.如果内部执行失败:
+        1.上层删除临时frm
+
+        b.如果执行成功
+        1.上层开始做rename操作,将旧表rename为临时表,新表rename为旧表名字
+        
+        */
         if (mysql_inplace_alter_table(thd, table, inplace_info))
         {
             /* 错误处理，参考5.6 */
             //return true;
+            
+
+            DBUG_RETURN(TRUE);
         }
+
     }
 
     if (pending_inplace_add_index)
