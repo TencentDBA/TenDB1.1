@@ -4895,7 +4895,11 @@ mysql_compare_tables(TABLE *table,
   Alter_info tmp_alter_info(*alter_info, thd->mem_root);
   uint db_options= 0; /* not used */
 
-  /* Create the prepared information. */
+  /*
+  Create the prepared information.  
+  NOTE: here the create_info will change: varchar collumns' length would recomputed
+  */
+
   if (mysql_prepare_create_table(thd, create_info,
                                  &tmp_alter_info,
                                  (table->s->tmp_table != NO_TMP_TABLE),
@@ -5320,36 +5324,41 @@ bool fill_alter_inplace_info(
             /*
             Check if type of column has changed to some incompatible type.
             */
-            switch (field->is_equal(new_field))
-            {
-            case IS_EQUAL_NO:
-                /* New column type is incompatible with old one. */
-                ha_alter_info->handler_flags|= Alter_inplace_info::ALTER_COLUMN_TYPE_FLAG;
-                break;
-            case IS_EQUAL_YES:
-                /*
-                New column is the same as the old one or the fully compatible with
-                it (for example, ENUM('a','b') was changed to ENUM('a','b','c')).
-                Such a change if any can ALWAYS be carried out by simply updating
-                data-dictionary without even informing storage engine.
-                No flag is set in this case.
-                */
-                break;
-            case IS_EQUAL_PACK_LENGTH:
-                /*
-                New column type differs from the old one, but has compatible packed
-                data representation. Depending on storage engine, such a change can
-                be carried out by simply updating data dictionary without changing
-                actual data (for example, VARCHAR(300) is changed to VARCHAR(400)).
-                */
-                ha_alter_info->handler_flags|= Alter_inplace_info::
-                    ALTER_COLUMN_EQUAL_PACK_LENGTH_FLAG;
-                break;
-            default:
-                DBUG_ASSERT(0);
-                /* Safety. */
-                ha_alter_info->handler_flags|= Alter_inplace_info::ALTER_COLUMN_TYPE_FLAG;
-            }
+            /* 
+            以下判断均屏蔽掉了,原因是: 在判断varchar字段的时候,由于暂时还没有执行mysql_prepare_create_table操作,
+            alter_info->create_list 里面的的varchar字段的length判断是不准确的.! 这个地方可能会有隐患,mark!
+            
+            */
+            //switch (field->is_equal(new_field))
+            //{
+            //case IS_EQUAL_NO:
+            //    /* New column type is incompatible with old one. */
+            //    //  ha_alter_info->handler_flags|= Alter_inplace_info::ALTER_COLUMN_TYPE_FLAG;
+            //    break;
+            //case IS_EQUAL_YES:
+            //    /*
+            //    New column is the same as the old one or the fully compatible with
+            //    it (for example, ENUM('a','b') was changed to ENUM('a','b','c')).
+            //    Such a change if any can ALWAYS be carried out by simply updating
+            //    data-dictionary without even informing storage engine.
+            //    No flag is set in this case.
+            //    */
+            //    break;
+            //case IS_EQUAL_PACK_LENGTH:
+            //    /*
+            //    New column type differs from the old one, but has compatible packed
+            //    data representation. Depending on storage engine, such a change can
+            //    be carried out by simply updating data dictionary without changing
+            //    actual data (for example, VARCHAR(300) is changed to VARCHAR(400)).
+            //    */
+            //    ha_alter_info->handler_flags|= Alter_inplace_info::
+            //        ALTER_COLUMN_EQUAL_PACK_LENGTH_FLAG;
+            //    break;
+            //default:
+            //    DBUG_ASSERT(0);
+            //    /* Safety. */
+            //    ha_alter_info->handler_flags|= Alter_inplace_info::ALTER_COLUMN_TYPE_FLAG;
+            //}
 
             /* Check if field was renamed */
             if (my_strcasecmp(system_charset_info, field->field_name,
@@ -6703,6 +6712,8 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     We don't log the statement, it will be logged later.
     */
     tmp_disable_binlog(thd);
+
+    /* 创建临时表frm文件 */
     error= mysql_create_table_no_lock(thd, new_db, tmp_name,
         create_info,
         alter_info,
@@ -7011,8 +7022,16 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         if (mysql_inplace_alter_table(thd, table, tmp_table, inplace_info))
         {
             /* 错误处理，参考5.6 */
-            //return true;
-            DBUG_RETURN(TRUE);
+            /*
+            rm tmp table
+            delete inplace_info   
+            */  
+            if(inplace_info){
+                   delete (Alter_inplace_info *)inplace_info;
+            }
+            
+            //DBUG_RETURN(TRUE);
+            goto err_new_table_cleanup;
         }
 
     }
