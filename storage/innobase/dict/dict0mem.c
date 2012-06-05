@@ -395,3 +395,140 @@ dict_mem_index_free(
 
 	mem_heap_free(index->heap);
 }
+
+
+/**********************************************************************//**
+直接对字典对象内存增加若干列 
+*/
+void
+dict_mem_table_add_col_simple(
+    dict_table_t*           table,              /*!< in: 原表字典对象 */
+    dict_col_t*             col_arr,            /*!< in: 增加列后的用户列字典对象 */
+    ulint                   n_col,              /*!< in: col_arr的个数 */
+    char*                   col_names,          /*!< in: 用户列所有列名 */
+    ulint                   col_names_len       /*!< in: col_names的长度 */
+)
+{
+    ulint                   org_heap_size = 0;
+    dict_col_t*             org_cols;
+    ulint                   org_n_cols = table->n_def - DATA_N_SYS_COLS;
+    ulint                   add_n_cols = n_col - org_n_cols;
+    dict_index_t*           index = NULL;
+    dict_index_t*           clu_index = NULL;
+    char*                   new_col_names;
+    dict_field_t*           fields;
+    ulint                   i;
+    
+    ut_ad(dict_table_is_gcs(table) && table->cached);
+    ut_ad(table->n_def - DATA_N_SYS_COLS < n_col && table->n_def  == table->n_cols);
+
+    org_heap_size = mem_heap_get_size(table->heap);
+
+    org_cols = table->cols;
+
+    /* 拷贝前N列（用户列）及列名 */
+    table->cols = mem_heap_zalloc(table->heap, sizeof(dict_col_t) * (DATA_N_SYS_COLS + n_col));
+
+    memcpy(table->cols, col_arr, n_col * sizeof(dict_col_t));
+
+    table->n_def = n_col;
+    table->n_cols = n_col + DATA_N_SYS_COLS;
+
+    new_col_names = mem_heap_zalloc(table->heap, col_names_len);
+    memcpy(new_col_names, col_names, col_names_len);
+    table->col_names = new_col_names;
+
+    /* 增加系统列 */
+    table->cached = FALSE;          /* 避免断言 */
+    dict_table_add_system_columns(table, table->heap);
+    table->cached = TRUE;
+
+    dict_table_set_big_row(table);
+
+    dict_sys->size -= org_heap_size;
+    dict_sys->size += mem_heap_get_size(table->heap);
+
+    /* 更新索引及索引列信息 */
+    index = UT_LIST_GET_FIRST(table->indexes);
+    while (index)
+    {
+        ulint               n_fields;
+        dict_field_t*       org_fields;
+
+        ut_ad(index->n_def == index->n_fields);
+
+        org_heap_size = mem_heap_get_size(index->heap);
+
+        org_fields = index->fields;
+
+        if (dict_index_is_clust(index))
+        {
+            clu_index = index;
+
+            ut_ad(index->n_fields <= index->n_user_defined_cols + table->n_cols);
+
+            fields = (dict_field_t*) mem_heap_zalloc(
+                index->heap, 1 + (index->n_user_defined_cols + table->n_cols) * sizeof(dict_field_t));  /* 分配足够多的空间 */
+
+            memcpy(fields, org_fields, index->n_fields * sizeof(dict_field_t));
+
+            index->fields = fields;     /* dict_index_add_col必须保证已经赋值 */
+
+            /* 聚集索引需要增加最后几列的信息 */
+            for (i = 0; i < add_n_cols; ++i)
+            {
+                dict_index_add_col(index, table, dict_table_get_nth_col(table, org_n_cols + i), 0);  /* n_nullable已在dict_index_add_col处理 */
+            }
+
+            /* 聚集索引只处理前n_field列，因新增的若干列已经在上面处理了 */
+            n_fields = index->n_fields;
+            index->n_fields     += add_n_cols;
+
+            ut_ad(index->n_fields == index->n_def);
+
+            //index->n_nullable   += n_add_col_nullable;  
+            //index->n_user_defined_cols += add_n_cols;
+            //index->n_def        += add_n_cols;
+
+            //             trx_is_strict(trx)
+            //                 || dict_table_get_format(node->table)
+            //                 >= DICT_TF_FORMAT_ZIP
+        }
+        else
+        {
+            ut_ad(index->n_user_defined_cols + clu_index->n_uniq + 1 >= index->n_fields);
+            ut_ad(clu_index != NULL);
+
+            fields = (dict_field_t*) mem_heap_zalloc(
+                index->heap, 1 + (index->n_user_defined_cols + clu_index->n_uniq + 1) * sizeof(dict_field_t));  /* 分配足够多的空间 */
+
+            memcpy(fields, org_fields, index->n_fields * sizeof(dict_field_t));
+
+            n_fields = index->n_fields;
+
+            index->fields = fields;
+        }
+        
+        /* 修改索引列col和name指针地址 */
+        for (i = 0; i < n_fields; ++i)
+        {
+            ulint       col_ind = org_fields[i].col->ind;
+
+            /* 因为表中org_n_cols后插入了若干列，原列索引大于等于org_n_cols(系统列)都需要增大增加的列数 */
+            if (col_ind >= org_n_cols)
+                col_ind += add_n_cols;
+
+            fields[i].col = dict_table_get_nth_col(table, col_ind);
+            fields[i].name = dict_table_get_col_name(table, col_ind);
+        }
+
+        dict_sys->size -= org_heap_size;
+        dict_sys->size += mem_heap_get_size(index->heap);
+
+        index = UT_LIST_GET_NEXT(indexes, index);
+    }
+
+    /* 外键 */
+}
+
+

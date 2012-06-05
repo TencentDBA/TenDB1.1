@@ -21,7 +21,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 Smart ALTER TABLE
 *******************************************************/
 
-
 #include <unireg.h>
 #include <mysqld_error.h>
 #include <sql_class.h>
@@ -29,6 +28,7 @@ Smart ALTER TABLE
 #include <mysql/innodb_priv.h>
 
 extern "C" {
+
 #include "log0log.h"
 #include "row0merge.h"
 #include "srv0srv.h"
@@ -39,6 +39,9 @@ extern "C" {
 
 #include "pars0pars.h"
 #include "que0que.h"
+
+#include "dict0mem.h"
+
 }
 
 #include "ha_innodb.h"
@@ -1540,7 +1543,6 @@ err:
     DBUG_RETURN(error);
 }
 
-
 /*
 
 Return
@@ -1566,8 +1568,10 @@ innobase_add_columns_simple(
     ulint           idx = 0;
     ulint           lock_idx = 0;
     Field           *field;
-    dict_col_t      *col = NULL;
+    dict_col_t      *col_arr = NULL;
     ulint           n_add = 0;
+    char*           col_names = NULL;
+    char*           col_name = NULL;
 
     DBUG_ENTER("innobase_add_columns_simple");
 
@@ -1578,8 +1582,9 @@ innobase_add_columns_simple(
     ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_EX));
 #endif /* UNIV_SYNC_DEBUG */
 
-    col = (dict_col_t *)mem_heap_alloc(heap, sizeof(dict_col_t));
-    if (col == NULL)
+    col_arr = (dict_col_t *)mem_heap_zalloc(heap, sizeof(dict_col_t) * tmp_table->s->fields);
+    col_names = (char*)mem_heap_zalloc(heap, tmp_table->s->fields * 200);       /* 每个字段长度必小于200 */
+    if (col_arr == NULL || col_names == NULL)
     {
         push_warning_printf(
             (THD*) trx->mysql_thd,
@@ -1589,6 +1594,8 @@ innobase_add_columns_simple(
 
         goto err;
     }
+
+    col_name = col_names;
 
     def_it.rewind();
     while (cfield =def_it++)
@@ -1629,7 +1636,7 @@ innobase_add_columns_simple(
 
             field = tmp_table->field[idx];
 
-            error = innodbase_fill_col_info(trx, col, table, tmp_table, idx);
+            error = innodbase_fill_col_info(trx, &col_arr[idx], table, tmp_table, idx);
 
             if (error != DB_SUCCESS)
             {
@@ -1639,11 +1646,11 @@ innobase_add_columns_simple(
             info = pars_info_create();  /* que_eval_sql执行完会释放 */
 
             pars_info_add_ull_literal(info, "table_id", table->id);
-            pars_info_add_int4_literal(info, "pos", col->ind);
+            pars_info_add_int4_literal(info, "pos", col_arr[idx].ind);
             pars_info_add_str_literal(info, "name", field->field_name);
-            pars_info_add_int4_literal(info, "mtype", col->mtype);
-            pars_info_add_int4_literal(info, "prtype", col->prtype);
-            pars_info_add_int4_literal(info, "len", col->len);
+            pars_info_add_int4_literal(info, "mtype", col_arr[idx].mtype);
+            pars_info_add_int4_literal(info, "prtype", col_arr[idx].prtype);
+            pars_info_add_int4_literal(info, "len", col_arr[idx].len);
         
             /* SYS_COLUMNS(table_id, pos, name, mtype, prtype, len, prec) */
             error = que_eval_sql(
@@ -1671,6 +1678,9 @@ innobase_add_columns_simple(
             }
 
             n_add++;
+
+            strcpy(col_name, field->field_name);
+            col_name += strlen(col_name) + 1;
         }
         else
         {
@@ -1681,8 +1691,16 @@ innobase_add_columns_simple(
                 //for safe
                 goto err;
             }
+
+            memcpy(&col_arr[idx], dict_table_get_nth_col(table, idx), sizeof(dict_col_t));
+
+            strcpy(col_name, dict_table_get_col_name(table, idx));
+            col_name += strlen(col_name) + 1;
+            
         }
         idx ++;
+
+        ut_ad((ulint)(col_name - col_names) < 200 * tmp_table->s->fields);
     }
 
     info = pars_info_create();  /* que_eval_sql执行完会释放 */
@@ -1715,6 +1733,39 @@ innobase_add_columns_simple(
 
         goto err;
     }
+
+    ulint       lock_retry = 0;
+    ibool       locked = FALSE;
+
+    while (lock_retry++ < 10)
+    {
+        if (!rw_lock_x_lock_nowait(&btr_search_latch))
+        {
+            /* Sleep for 10ms before trying again. */
+            os_thread_sleep(10000);
+            continue;
+        }
+
+        locked = TRUE;
+        break;
+    }
+
+    if (!locked)
+    {
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "rw_lock_x_lock_nowait(&btr_search_latch) failed %s %d", __FILE__, __LINE__);
+
+        error = DB_ERROR;
+
+        goto err;
+    }
+
+    dict_mem_table_add_col_simple(table, col_arr, tmp_table->s->fields, col_names, col_name - col_names);
+
+    rw_lock_x_unlock(&btr_search_latch);
 
 err:
     DBUG_RETURN(error);
@@ -1948,7 +1999,7 @@ ha_innobase::inplace_alter_table(
     trx_t*                  user_trx;
     THD*			        thd;
     trx_t*                  trx;
-    ulint                   err = FALSE;
+    ulint                   err = DB_ERROR;
     char                    norm_name[1000];
     dict_table_t            *dict_table;
     mem_heap_t*             heap;
@@ -2021,14 +2072,15 @@ ha_innobase::inplace_alter_table(
     }
     
     /* 成功就提交，否则回滚 */
-    if (err)
+    if (err == DB_SUCCESS)
         trx_commit_for_mysql(trx);
     else
         trx_rollback_for_mysql(trx);
 
     /* 锁什么时候释放 */
 
-    dict_table_remove_from_cache(dict_table);
+
+    //dict_table_remove_from_cache(dict_table);
 
     row_mysql_unlock_data_dictionary(trx);
 

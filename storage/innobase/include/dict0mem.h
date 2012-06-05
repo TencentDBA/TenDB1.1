@@ -683,6 +683,18 @@ struct dict_table_struct{
 #endif /* UNIV_DEBUG */
 };
 
+/**********************************************************************//**
+直接对字典对象内存增加若干列 
+*/
+void
+dict_mem_table_add_col_simple(
+    dict_table_t*           table,              /*!< in: 原表字典对象 */
+    dict_col_t*             col_arr,            /*!< in: 增加列后的用户列字典对象 */
+    ulint                   n_col,              /*!< in: col_arr的个数 */
+    char*                   col_names,          /*!< in: 用户列所有列名 */
+    ulint                   col_names_len       /*!< in: col_names的长度 */
+);
+
 #ifndef UNIV_NONINL
 #include "dict0mem.ic"
 #endif

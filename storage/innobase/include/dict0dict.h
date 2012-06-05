@@ -281,6 +281,12 @@ dict_table_add_system_columns(
 /*==========================*/
 	dict_table_t*	table,	/*!< in/out: table */
 	mem_heap_t*	heap);	/*!< in: temporary heap */
+
+void
+dict_table_set_big_row(
+    dict_table_t*           table
+);
+
 #ifndef UNIV_HOTBACKUP
 /**********************************************************************//**
 Adds a table object to the dictionary cache. */

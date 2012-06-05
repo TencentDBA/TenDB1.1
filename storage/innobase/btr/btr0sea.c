@@ -1527,16 +1527,17 @@ btr_search_update_hash_on_delete(
 
 	table = btr_search_sys->hash_index;
 
-	rec = btr_cur_get_rec(cursor);
-
-	fold = rec_fold(rec, rec_get_offsets(rec, index, offsets_,
-					     ULINT_UNDEFINED, &heap),
-			block->curr_n_fields, block->curr_n_bytes, index->id);
-	if (UNIV_LIKELY_NULL(heap)) {
-		mem_heap_free(heap);
-	}
-
 	rw_lock_x_lock(&btr_search_latch);
+
+    rec = btr_cur_get_rec(cursor);
+
+    /* 把以下操作移向上锁之后 */
+    fold = rec_fold(rec, rec_get_offsets(rec, index, offsets_,
+        ULINT_UNDEFINED, &heap),
+        block->curr_n_fields, block->curr_n_bytes, index->id);
+    if (UNIV_LIKELY_NULL(heap)) {
+        mem_heap_free(heap);
+    }
 
 	if (block->index) {
 		ut_a(block->index == index);
@@ -1667,6 +1668,8 @@ btr_search_update_hash_on_insert(
 	ins_rec = page_rec_get_next(rec);
 	next_rec = page_rec_get_next(ins_rec);
 
+    rw_lock_s_lock(&btr_search_latch);
+
 	offsets = rec_get_offsets(ins_rec, index, offsets,
 				  ULINT_UNDEFINED, &heap);
 	ins_fold = rec_fold(ins_rec, offsets, n_fields, n_bytes, index->id);
@@ -1682,7 +1685,12 @@ btr_search_update_hash_on_insert(
 		offsets = rec_get_offsets(rec, index, offsets,
 					  n_fields + (n_bytes > 0), &heap);
 		fold = rec_fold(rec, offsets, n_fields, n_bytes, index->id);
+
+         rw_lock_s_unlock(&btr_search_latch);
+
 	} else {
+        rw_lock_s_unlock(&btr_search_latch);
+
 		if (left_side) {
 
 			rw_lock_x_lock(&btr_search_latch);
