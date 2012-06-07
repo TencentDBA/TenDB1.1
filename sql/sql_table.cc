@@ -4958,21 +4958,6 @@ mysql_compare_tables(TABLE *table,
     DBUG_RETURN(0);
   }
 
-  /* 检查是否能够快速加字段 
-    1. 必须innodb
-    2. 必须GCS格式
-    3. 必须只加字段（1个或多个），暂时实现一个，多个评估实现难度(添加一个字段和多个字段差不多)
-    4.   
-  */
-  enum row_type tmp_row_type = table->file->get_row_type();
-  if((create_info->row_type != ROW_TYPE_GCS && create_info->row_type != ROW_TYPE_DEFAULT)||
-      tmp_row_type != ROW_TYPE_GCS ||
-      DB_TYPE_INNODB != ha_legacy_type(ha_checktype(thd,ha_legacy_type(create_info->db_type),0,0)) ){
-        *need_copy_table = ALTER_TABLE_DATA_CHANGED;
-        DBUG_RETURN(0);
-  }
-
-
   /*
     Use transformed info to evaluate possibility of in-place ALTER TABLE
     but use the preserved field to persist modifications.
@@ -5826,7 +5811,9 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     {
         Key *key;
         while ((key=key_it++))			// Add new keys
-        {
+        {           
+            //fast add column temporary not surpport add index at the sametime.
+            add_column_simple_flag = false;           
             if (key->type != Key::FOREIGN_KEY)
                 new_key_list.push_back(key);
             if (key->name.str &&
@@ -5890,10 +5877,17 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
         1. 是否只有add column操作，根据alter_info->flags，以及其他列表是否为空等，不能指定任何的create_options, --done
         2. 不能含默认值，注意时间类型的处理 --done
         3. 是否临时表，分区表   --done
-        4. 调用存储引擎接口判断，只有innodb实现这个接口，其他必定为返回FALSE，存储引擎会判断是否为GCS表等。  --doing 
+        4. 调用存储引擎接口判断，只有innodb实现这个接口，其他必定为返回FALSE，存储引擎会判断是否为GCS表等。  --done 
         */
 
-        if(alter_info->flags & ~(ALTER_ADD_COLUMN) ||          
+
+        /*
+        NOTE: alter table t add column (id9 int,key(id9));
+        the alter operation above would set the ALTER_ADD_INDEX flag when parse,
+        so we check if there are new added indexs when check index above.
+        */
+
+        if(alter_info->flags & ~(ALTER_ADD_COLUMN|ALTER_ADD_INDEX) ||          
            create_info->options     ||    
            (create_info->other_options & HA_LEX_CREATE_WITH_PARTITION)){    
                /* 
@@ -5904,12 +5898,6 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
             goto err;
         }      
        
-
-        //DBUG_ASSERT(alter_info->
-
-
-        // to do 
-
         // 检查完后，生成alter_inplace结构
         Alter_inplace_info*     inplace_info;
 

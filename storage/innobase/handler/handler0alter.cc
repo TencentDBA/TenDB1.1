@@ -1971,16 +1971,16 @@ ha_innobase::check_if_supported_inplace_alter(
     HA_CREATE_INFO * create_info = inplace_info->create_info;
 
     /* 如果行格式不是GCS,或者创建的行格式与底层的行格式不一样,则不能直接快速alter */
-    if(create_info->used_fields & HA_CREATE_USED_ROW_FORMAT &&
-        create_info->row_type != get_row_type() &&
-        ROW_TYPE_GCS != get_row_type()){
-            DBUG_RETURN(true);
+    if(ROW_TYPE_GCS != get_row_type() || 
+		( (create_info->used_fields & HA_CREATE_USED_ROW_FORMAT) &&
+		  create_info->row_type != get_row_type() )){
+            DBUG_RETURN(false);
     }
 
     
-    /* 只有增加字段的语句 */
+    /* 除增加字段的标记,还有其他信息，则表示不支持,注意，这里没有增加索引的信息 */
     if(inplace_info->handler_flags & ~(Alter_inplace_info::ADD_COLUMN_FLAG)){
-        DBUG_RETURN(true);
+        DBUG_RETURN(false);
     }
     
     
