@@ -259,7 +259,7 @@ class ha_innobase: public handler
 	/** @} */
 
     bool
-    ha_innobase::check_if_supported_inplace_alter(
+    check_if_supported_inplace_alter(
         /*==========================================*/
         THD                     *thd,
         TABLE                   *table,

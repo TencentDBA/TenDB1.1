@@ -914,8 +914,8 @@ page_cur_parse_insert_rec(
 
         /* Ôö¼Ó¶ÏÑÔ */
         ut_ad (!rec_is_gcs(buf + origin_offset) ||
-                dict_index_is_clust(index) && dict_table_is_gcs(index->table) && 
-                    rec_gcs_get_field_count(buf + origin_offset, NULL) == dict_index_get_n_fields(index));
+                (dict_index_is_clust(index) && dict_table_is_gcs(index->table) && 
+                    rec_gcs_get_field_count(buf + origin_offset, NULL) == dict_index_get_n_fields(index)));
 	} else {
 		rec_set_info_bits_old(buf + origin_offset,
 							info_and_status_bits);

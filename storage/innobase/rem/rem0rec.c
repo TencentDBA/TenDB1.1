@@ -1245,8 +1245,8 @@ rec_convert_dtuple_to_rec_comp(
 	switch (UNIV_EXPECT(status, REC_STATUS_ORDINARY)) {
 	case REC_STATUS_ORDINARY:
 		ut_ad(n_fields == dict_index_get_n_fields(index) || 
-                dict_index_is_clust(index) && dict_table_is_gcs(index->table) && 
-                    n_fields <= dict_index_get_n_fields(index));
+                (dict_index_is_clust(index) && dict_table_is_gcs(index->table) && 
+                    n_fields <= dict_index_get_n_fields(index)));
 		n_node_ptr_field = ULINT_UNDEFINED;
         gcs_flag = TRUE;
 		break;

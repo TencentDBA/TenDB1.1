@@ -1576,7 +1576,8 @@ rec_gcs_get_field_count(
         *field_count_len = 2;
     }
 
-    ret = ((*ptr-- & 0x7F) << 8) | *ptr;
+    ret = ((*ptr-- & 0x7F) << 8);
+    ret |= *ptr;
     ut_ad(ret < 1500 && ret > 0x7F);
 
     return ret;

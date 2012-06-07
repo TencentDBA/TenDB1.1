@@ -1458,7 +1458,7 @@ innodbase_fill_col_info(
             table->name, (char*) field->field_name);
         
         error = DB_ERROR;
-        goto err;
+        goto err_exit;
     }
 
     if (field->null_ptr) {
@@ -1520,7 +1520,7 @@ innodbase_fill_col_info(
             field->field_name);
 
         error = DB_ERROR;
-        goto err;
+        goto err_exit;
     }
 
     
@@ -1539,7 +1539,7 @@ innodbase_fill_col_info(
 //         charset_no),
 //         col_len}
 
-err:
+err_exit:
     DBUG_RETURN(error);
 }
 
@@ -1560,18 +1560,20 @@ innobase_add_columns_simple(
 )
 {
     pars_info_t*	info;
-    ulint   		error;
+    ulint   		error_no;
     Alter_info*     alter_info = static_cast<Alter_info*>(inplace_info->alter_info);
     Create_field*   cfield;
     List_iterator<Create_field> def_it(alter_info->create_list);
-    ulint           prev_lock_idx = -1;
+    ulint           prev_add_idx = ULINT_UNDEFINED;
     ulint           idx = 0;
-    ulint           lock_idx = 0;
+    ulint           add_idx = 0;
     Field           *field;
     dict_col_t      *col_arr = NULL;
     ulint           n_add = 0;
     char*           col_names = NULL;
     char*           col_name = NULL;
+    ulint           lock_retry = 0;
+    ibool           locked = FALSE;
 
     DBUG_ENTER("innobase_add_columns_simple");
 
@@ -1592,7 +1594,7 @@ innobase_add_columns_simple(
             ER_CANT_CREATE_TABLE,
             "mem_heap_alloc error %s %d", __FILE__, __LINE__);
 
-        goto err;
+        goto err_exit;
     }
 
     col_name = col_names;
@@ -1614,33 +1616,33 @@ innobase_add_columns_simple(
                     "!cfield->change && !cfield->after error %s %d", __FILE__, __LINE__);
 
                 //for safe
-                goto err;
+                goto err_exit;
             }
 
-            lock_idx = idx;
-            ut_ad( prev_lock_idx == -1 || lock_idx == prev_lock_idx + 1);
+            add_idx = idx;
+            ut_ad( prev_add_idx == ULINT_UNDEFINED || add_idx == prev_add_idx + 1);
             
-            if (prev_lock_idx != -1 && lock_idx != prev_lock_idx + 1)
+            if (prev_add_idx != ULINT_UNDEFINED && add_idx != prev_add_idx + 1)
             {
                 //for safe
                 push_warning_printf(
                     (THD*) trx->mysql_thd,
                     MYSQL_ERROR::WARN_LEVEL_WARN,
                     ER_CANT_CREATE_TABLE,
-                    "prev_lock_idx != -1 && lock_idx != prev_lock_idx + 1 %s %d", __FILE__, __LINE__);
+                    "prev_lock_idx != ULINT_UNDEFINED && lock_idx != prev_lock_idx + 1 %s %d", __FILE__, __LINE__);
 
-                goto err;
+                goto err_exit;
             }
             
-            prev_lock_idx = lock_idx;
+            prev_add_idx = add_idx;
 
             field = tmp_table->field[idx];
 
-            error = innodbase_fill_col_info(trx, &col_arr[idx], table, tmp_table, idx);
+            error_no = innodbase_fill_col_info(trx, &col_arr[idx], table, tmp_table, idx);
 
-            if (error != DB_SUCCESS)
+            if (error_no != DB_SUCCESS)
             {
-                goto err;
+                goto err_exit;
             }
 
             info = pars_info_create();  /* que_eval_sql执行完会释放 */
@@ -1653,7 +1655,7 @@ innobase_add_columns_simple(
             pars_info_add_int4_literal(info, "len", col_arr[idx].len);
         
             /* SYS_COLUMNS(table_id, pos, name, mtype, prtype, len, prec) */
-            error = que_eval_sql(
+            error_no = que_eval_sql(
                 info,
                 "PROCEDURE ADD_SYS_COLUMNS_PROC () IS\n"
                 "BEGIN\n"
@@ -1663,9 +1665,9 @@ innobase_add_columns_simple(
                 FALSE, trx);
 
             DBUG_EXECUTE_IF("ib_add_column_error",
-                error = DB_OUT_OF_FILE_SPACE;);
+                error_no = DB_OUT_OF_FILE_SPACE;);
 
-            if (error != DB_SUCCESS)
+            if (error_no != DB_SUCCESS)
             {
                 //for safe
                 push_warning_printf(
@@ -1674,7 +1676,7 @@ innobase_add_columns_simple(
                     ER_CANT_CREATE_TABLE,
                     "ADD_SYS_COLUMNS_PROC error %s %d field_name(%s)", __FILE__, __LINE__, field->field_name);
 
-                goto err;
+                goto err_exit;
             }
 
             n_add++;
@@ -1689,7 +1691,7 @@ innobase_add_columns_simple(
             if (!tmp_table->field[idx]->is_equal(cfield))
             {
                 //for safe
-                goto err;
+                goto err_exit;
             }
 
             memcpy(&col_arr[idx], dict_table_get_nth_col(table, idx), sizeof(dict_col_t));
@@ -1713,7 +1715,7 @@ innobase_add_columns_simple(
     pars_info_add_str_literal(info, "table_name", table->name);
     
     /* 更新列数 */
-    error = que_eval_sql(
+    error_no = que_eval_sql(
         info,
         "PROCEDURE UPDATE_SYS_TABLES_N_COLS_PROC () IS\n"
         "BEGIN\n"
@@ -1722,7 +1724,7 @@ innobase_add_columns_simple(
         "END;\n",
         FALSE, trx);
 
-    if (error != DB_SUCCESS)
+    if (error_no != DB_SUCCESS)
     {
         //for safe
         push_warning_printf(
@@ -1731,11 +1733,8 @@ innobase_add_columns_simple(
             ER_CANT_CREATE_TABLE,
             "UPDATE_SYS_TABLES_N_COLS_PROC error %s %d table_name(%s)", __FILE__, __LINE__, table->name);
 
-        goto err;
+        goto err_exit;
     }
-
-    ulint       lock_retry = 0;
-    ibool       locked = FALSE;
 
     while (lock_retry++ < 10)
     {
@@ -1758,17 +1757,17 @@ innobase_add_columns_simple(
             ER_CANT_CREATE_TABLE,
             "rw_lock_x_lock_nowait(&btr_search_latch) failed %s %d", __FILE__, __LINE__);
 
-        error = DB_ERROR;
+        error_no = DB_ERROR;
 
-        goto err;
+        goto err_exit;
     }
 
     dict_mem_table_add_col_simple(table, col_arr, tmp_table->s->fields, col_names, col_name - col_names);
 
     rw_lock_x_unlock(&btr_search_latch);
 
-err:
-    DBUG_RETURN(error);
+err_exit:
+    DBUG_RETURN(error_no);
     
 }
 

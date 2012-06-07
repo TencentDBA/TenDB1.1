@@ -5253,7 +5253,7 @@ bool fill_alter_inplace_info(
     Field **f_ptr, *field;
     List_iterator_fast<Create_field> new_field_it;
     Create_field *new_field;
-    uint candidate_key_count= 0;
+    //uint candidate_key_count= 0;
     Alter_info *alter_info= static_cast<Alter_info *>(ha_alter_info->alter_info);
     DBUG_ENTER("fill_alter_inplace_info");
 
@@ -5928,7 +5928,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
         if (!support_flag && 
             *inplace_info_out != NULL)
         {
-            delete *inplace_info_out;
+            delete inplace_info;
 
             *inplace_info_out = NULL;
         }
