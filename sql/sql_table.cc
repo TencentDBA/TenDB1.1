@@ -4805,6 +4805,29 @@ is_index_maintenance_unique (TABLE *table, Alter_info *alter_info)
   return FALSE;
 }
 
+/*
+  function to check  GEOMETRY equal special .
+  this function can be found in each DateType of Field_{DATATYPE}.
+  but for GEOMETRY TYPE(point),the orgin Field_geom class is base on Field_Blob,
+  and it dinnot realize the is_equal(),so the GEOMETRY's check would faild,
+  
+
+  RETURN:
+  1  equal
+  0  no equal
+
+*/
+uint check_geometry_equal_special(Field * old_field, Create_field *new_field){
+  DBUG_ENTER("check_geometry_equal_special");
+
+  if(old_field->field_flags_are_binary() != new_field->field_flags_are_binary())
+	DBUG_RETURN(0);
+
+  DBUG_RETURN (new_field->charset == old_field->charset() &&
+	new_field->pack_length == old_field->pack_length() &&
+	new_field->sql_type == MYSQL_TYPE_GEOMETRY &&
+	old_field->type() == MYSQL_TYPE_GEOMETRY);
+}
 
 /*
   SYNOPSIS
@@ -5004,8 +5027,10 @@ mysql_compare_tables(TABLE *table,
     /* Evaluate changes bitmap and send to check_if_incompatible_data() */
     if (!(tmp= field->is_equal(tmp_new_field)))
     {
-      *need_copy_table= ALTER_TABLE_DATA_CHANGED;
-      DBUG_RETURN(0);
+	  if(!inplace_info || check_geometry_equal_special(field,tmp_new_field)!=1){
+		*need_copy_table= ALTER_TABLE_DATA_CHANGED;
+		DBUG_RETURN(0);
+	  }
     }
     // Clear indexed marker
     field->flags&= ~FIELD_IN_ADD_INDEX;
@@ -5479,7 +5504,14 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     
     /* flag for check if can fast alter table add column*/
     bool add_column_simple_flag = true;                                     /* 初始化为true */
-
+  
+	/* judge if there are drop column/alter column/add key operation,if any set add_column_simple_flag false */
+	if(alter_info->drop_list.elements | 
+	  alter_info->alter_list.elements |
+	  alter_info->key_list.elements
+	  ){
+		add_column_simple_flag = false;
+	}
 
     DBUG_ENTER("mysql_prepare_alter_table");
 
@@ -6627,7 +6659,12 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     so that ALTER TABLE won't break when somebody will add new flag
     */
     if (need_copy_table == ALTER_TABLE_METADATA_ONLY)
+	{
         create_info->frm_only= 1;
+	}else if(inplace_info != NULL){
+		delete inplace_info;
+		inplace_info = NULL;
+	}
 
 #ifdef WITH_PARTITION_STORAGE_ENGINE
     if (table_for_fast_alter_partition)
@@ -6996,6 +7033,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         char filename[NAME_LEN+1];
         int  filename_len;
 
+		//这个地方那个断言出错了!
         DBUG_ASSERT(need_copy_table == ALTER_TABLE_METADATA_ONLY);
 
         filename_len = build_table_filename(filename, sizeof(filename) - 1, new_db, tmp_name, "", FN_IS_TMP);

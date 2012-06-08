@@ -26,6 +26,7 @@ Smart ALTER TABLE
 #include <sql_class.h>
 #include <sql_lex.h>                            // SQLCOM_CREATE_INDEX
 #include <mysql/innodb_priv.h>
+#include <sql_table.h>							// check_geometry_equal_special
 
 extern "C" {
 
@@ -1686,9 +1687,10 @@ innobase_add_columns_simple(
         }
         else
         {
-            ut_ad(tmp_table->field[idx]->is_equal(cfield));
+			// do a special judge for GEOMETRY TYPE
+            ut_ad(tmp_table->field[idx]->is_equal(cfield) || cfield->sql_type == MYSQL_TYPE_GEOMETRY);
 
-            if (!tmp_table->field[idx]->is_equal(cfield))
+            if (!tmp_table->field[idx]->is_equal(cfield) && !(cfield->sql_type == MYSQL_TYPE_GEOMETRY) )
             {
                 //for safe
                 goto err_exit;

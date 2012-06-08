@@ -16,6 +16,10 @@
 #ifndef SQL_TABLE_INCLUDED
 #define SQL_TABLE_INCLUDED
 
+
+#define DEFAULT_ROW_FORMAT "GCS"
+
+
 #include "my_global.h"                          /* my_bool */
 #include "my_sys.h"                             // pthread_mutex_t
 
@@ -215,6 +219,8 @@ bool check_duplicate_warning(THD *thd, char *msg, ulong length);
 */
 uint explain_filename(THD* thd, const char *from, char *to, uint to_length,
                       enum_explain_filename_mode explain_mode);
+
+
 
 
 extern MYSQL_PLUGIN_IMPORT const char *primary_key_name;

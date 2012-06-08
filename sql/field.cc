@@ -7811,6 +7811,7 @@ uint Field_blob::is_equal(Create_field *new_field)
   if (field_flags_are_binary() != new_field->field_flags_are_binary())
     return 0;
 
+  enum_field_types src_type = get_blob_type_from_length(max_data_length());
   return ((new_field->sql_type == get_blob_type_from_length(max_data_length()))
           && new_field->charset == field_charset &&
           new_field->pack_length == pack_length());
