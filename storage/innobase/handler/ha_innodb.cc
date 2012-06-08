@@ -6802,7 +6802,7 @@ get_row_format_name(
 	case ROW_TYPE_FIXED:
 		return("FIXED");
     case ROW_TYPE_GCS:
-		return("GCS");
+        return("GCS");
 	case ROW_TYPE_PAGE:
 	case ROW_TYPE_NOT_USED:
 		break;
@@ -6956,8 +6956,6 @@ ha_innobase::update_create_info(
     create_info->auto_increment_value = stats.auto_increment_value;
   }
 }
-
-
 
 /*****************************************************************//**
 Creates a new table to an InnoDB database.

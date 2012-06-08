@@ -2013,6 +2013,10 @@ ha_innobase::inplace_alter_table(
 
     DBUG_ASSERT(check_if_supported_inplace_alter(thd, table, ha_alter_info));
 
+    /* inplace alter table 开始日志 */
+    ut_print_timestamp(stderr);
+    fprintf(stderr, "  [InnoDB inplace alter table]  start, query: %s; db_name:%s; tmp_name: %s \n", ha_query(), table->s->db.str, tmp_table->alias);
+
     /* Get the transaction associated with the current thd, or create one
 	if not yet created */
 
@@ -2074,9 +2078,21 @@ ha_innobase::inplace_alter_table(
     
     /* 成功就提交，否则回滚 */
     if (err == DB_SUCCESS)
+    {
         trx_commit_for_mysql(trx);
+
+        /* inplace alter table commit日志 */
+        ut_print_timestamp(stderr);
+        fprintf(stderr, "  [InnoDB inplace alter table]  commit, query: %s; db_name:%s; tmp_name: %s \n", ha_query(), table->s->db.str, tmp_table->alias);
+    }
     else
+    {
         trx_rollback_for_mysql(trx);
+
+        /* inplace alter table rollback日志 */
+        ut_print_timestamp(stderr);
+        fprintf(stderr, "  [InnoDB inplace alter table]  rollback, error no : %d,  query: %s; db_name:%s; tmp_name: %s \n", err, ha_query(), table->s->db.str, tmp_table->alias);
+    }
 
     /* 锁什么时候释放 */
 

@@ -2268,6 +2268,7 @@ protected:
   void ha_statistic_increment(ulong SSV::*offset) const;
   void **ha_data(THD *) const;
   THD *ha_thd(void) const;
+  char *ha_query(void) const;
 
   /**
     Acquire the instrumented table information from a table share.

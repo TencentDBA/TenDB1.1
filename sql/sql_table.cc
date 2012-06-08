@@ -5506,9 +5506,9 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     bool add_column_simple_flag = true;                                     /* 初始化为true */
   
 	/* judge if there are drop column/alter column/add key operation,if any set add_column_simple_flag false */
-	if(alter_info->drop_list.elements | 
-	  alter_info->alter_list.elements |
-	  alter_info->key_list.elements
+	if(alter_info->drop_list.elements || 
+	    alter_info->alter_list.elements ||
+	    alter_info->key_list.elements
 	  ){
 		add_column_simple_flag = false;
 	}
@@ -5901,7 +5901,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     already check the default values of new added column.
     here we donnot check change_level,for normal add column ,the change level is METADATA_ONLY
     */
-    if (add_column_simple_flag && inplace_info_out && alter_info->change_level == ALTER_TABLE_METADATA_ONLY)
+    if (add_column_simple_flag && inplace_info_out && alter_info->change_level == ALTER_TABLE_METADATA_ONLY && !thd->lex->ignore)
     {    
         bool                    support_flag = false;
         /* 进一步检查以下情况 
@@ -5978,15 +5978,17 @@ mysql_inplace_alter_table(
     Alter_inplace_info  *inplace_info
 )
 {
+    int     err;
     DBUG_ENTER("mysql_inplace_alter_table");
 
     
-    if (table->file->ha_inplace_alter_table(table, tmp_table, inplace_info))
+    err = table->file->ha_inplace_alter_table(table, tmp_table, inplace_info);
+    
+    if (err)
     {
-        //error 
+        my_error(ER_GET_ERRNO, MYF(0), err);
         DBUG_RETURN(true);
     }
-
 
     DBUG_RETURN(false);
 }
@@ -6669,6 +6671,11 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
 #ifdef WITH_PARTITION_STORAGE_ENGINE
     if (table_for_fast_alter_partition)
     {
+        if(inplace_info){
+            delete inplace_info;
+            inplace_info = NULL;
+        }
+
         DBUG_RETURN(fast_alter_partition_table(thd, table, alter_info,
             create_info, table_list,
             db, table_name,
@@ -6968,7 +6975,14 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         /* We don't replicate alter table statement on temporary tables */
         if (!thd->is_current_stmt_binlog_format_row() &&
             write_bin_log(thd, TRUE, thd->query(), thd->query_length()))
+        {
+            if(inplace_info){
+                delete inplace_info;
+                inplace_info = NULL;
+            }
+
             DBUG_RETURN(TRUE);
+        }
         goto end_temporary;
     }
 
@@ -7048,15 +7062,6 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         if (mysql_inplace_alter_table(thd, table, tmp_table, inplace_info))
         {
             /* 错误处理，参考5.6 */
-            /*
-            rm tmp table
-            delete inplace_info   
-            */  
-            if(inplace_info){
-                   delete (Alter_inplace_info *)inplace_info;
-            }
-            
-            //DBUG_RETURN(TRUE);
             goto err_new_table_cleanup;
         }
 
@@ -7102,6 +7107,22 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         DBUG_ASSERT(new_db_type == old_db_type);
         /* This type cannot happen in regular ALTER. */
         new_db_type= old_db_type= NULL;
+
+        if (inplace_info)
+        {
+            //only rename tmp_name to table_name
+
+            DBUG_ASSERT(!strcmp(db, new_db) && !strcmp(table_name, new_alias));
+            if (mysql_rename_table(NULL, new_db, tmp_name, new_db,
+                new_alias, FN_FROM_IS_TMP))
+            {
+                /* rename失败，临时frm还在 */
+                error = 1;
+            }
+
+            goto end_inplace_alter;
+        }
+
     }
     if (mysql_rename_table(old_db_type, db, table_name, db, old_name,
         FN_TO_IS_TMP))
@@ -7129,6 +7150,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     if (! error)
         (void) quick_rm_table(old_db_type, db, old_name, FN_IS_TMP);
 
+end_inplace_alter:
     if (error)
     {
         /* This shouldn't happen. But let us play it safe. */
@@ -7196,7 +7218,14 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         thd->is_current_stmt_binlog_format_row() &&
         (create_info->options & HA_LEX_CREATE_TMP_TABLE)));
     if (write_bin_log(thd, TRUE, thd->query(), thd->query_length()))
+    {
+        if(inplace_info){
+            delete inplace_info;
+            inplace_info = NULL;
+        }
+
         DBUG_RETURN(TRUE);
+    }
 
     if (ha_check_storage_engine_flag(old_db_type, HTON_FLUSH_AFTER_RENAME))
     {
@@ -7236,6 +7265,12 @@ end_temporary:
         (ulong) (copied + deleted), (ulong) deleted,
         (ulong) thd->warning_info->statement_warn_count());
     my_ok(thd, copied + deleted, 0L, tmp_name);
+
+    if(inplace_info){
+        delete inplace_info;
+        inplace_info = NULL;
+    }
+
     DBUG_RETURN(FALSE);
 
 err_new_table_cleanup:
@@ -7288,6 +7323,11 @@ err:
         thd->abort_on_warning= save_abort_on_warning;
     }
 
+    if(inplace_info){
+        delete (Alter_inplace_info *)inplace_info;
+        inplace_info = NULL;
+    }
+
     DBUG_RETURN(TRUE);
 
 err_with_mdl:
@@ -7299,6 +7339,12 @@ err_with_mdl:
     */
     thd->locked_tables_list.unlink_all_closed_tables(thd, NULL, 0);
     thd->mdl_context.release_all_locks_for_name(mdl_ticket);
+    
+    if(inplace_info){
+        delete (Alter_inplace_info *)inplace_info;
+        inplace_info = NULL;
+    }
+
     DBUG_RETURN(TRUE);
 }
 /* mysql_alter_table */

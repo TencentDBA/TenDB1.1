@@ -454,6 +454,7 @@ dict_mem_table_add_col_simple(
     {
         ulint               n_fields;
         dict_field_t*       org_fields;
+        ibool               is_gen_clust_index = FALSE;
 
         ut_ad(index->n_def == index->n_fields);
 
@@ -464,6 +465,13 @@ dict_mem_table_add_col_simple(
         if (dict_index_is_clust(index))
         {
             clu_index = index;
+
+            /* 修改主键为rowid的ord_part值 */
+            if (!strcmp(clu_index->name, "GEN_CLUST_INDEX"))
+            {
+                is_gen_clust_index = TRUE;
+            }
+            
 
             ut_ad(index->n_fields <= index->n_user_defined_cols + table->n_cols);
 
@@ -520,6 +528,13 @@ dict_mem_table_add_col_simple(
 
             fields[i].col = dict_table_get_nth_col(table, col_ind);
             fields[i].name = dict_table_get_col_name(table, col_ind);
+
+            if (is_gen_clust_index && !strcmp(fields[i].name, "DB_ROW_ID"))
+            {
+                ut_ad(!fields[i].col->ord_part);
+                fields[i].col->ord_part = 1;
+            }
+            
         }
 
         dict_sys->size -= org_heap_size;

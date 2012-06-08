@@ -16,10 +16,6 @@
 #ifndef SQL_TABLE_INCLUDED
 #define SQL_TABLE_INCLUDED
 
-
-#define DEFAULT_ROW_FORMAT "GCS"
-
-
 #include "my_global.h"                          /* my_bool */
 #include "my_sys.h"                             // pthread_mutex_t
 

@@ -2209,6 +2209,15 @@ THD *handler::ha_thd(void) const
   return (table && table->in_use) ? table->in_use : current_thd;
 }
 
+char *handler::ha_query(void) const
+{
+    THD*    thd;
+
+    thd = ha_thd();
+
+    return thd->query();
+}
+
 PSI_table_share *handler::ha_table_share_psi(const TABLE_SHARE *share) const
 {
   return share->m_psi;
