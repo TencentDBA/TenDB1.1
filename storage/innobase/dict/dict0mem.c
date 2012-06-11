@@ -420,7 +420,7 @@ dict_mem_table_add_col_simple(
     ulint                   i;
     
     ut_ad(dict_table_is_gcs(table) && table->cached);
-    ut_ad(table->n_def - DATA_N_SYS_COLS < n_col && table->n_def  == table->n_cols);
+    ut_ad(table->n_def < n_col + DATA_N_SYS_COLS && table->n_def  == table->n_cols);
 
     org_heap_size = mem_heap_get_size(table->heap);
 

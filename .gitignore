@@ -5,7 +5,6 @@ bld
 *.a
 *.bb
 *.bbg
-*.bin
 *.cdf
 *.core
 *.d

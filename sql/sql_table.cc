@@ -5504,6 +5504,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     
     /* flag for check if can fast alter table add column*/
     bool add_column_simple_flag = true;                                     /* ³õÊ¼»¯Îªtrue */
+    bool varchar_flag = false;
   
 	/* judge if there are drop column/alter column/add key operation,if any set add_column_simple_flag false */
 	if(alter_info->drop_list.elements || 
@@ -5550,8 +5551,12 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     Field **f_ptr,*field;
     for (f_ptr=table->field ; (field= *f_ptr) ; f_ptr++)
     {
-        if (field->type() == MYSQL_TYPE_STRING)
+        if (field->type() == MYSQL_TYPE_STRING)             /* bug? */
             create_info->varchar= TRUE;
+
+        if (field->type() == MYSQL_TYPE_VARCHAR)
+            varchar_flag = true;
+
         /* Check if field should be dropped */
         Alter_drop *drop;
         drop_it.rewind();
@@ -5640,6 +5645,10 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
             my_error(ER_BAD_FIELD_ERROR, MYF(0), def->change, table->s->table_name.str);
             goto err;
         }
+
+        if (def->sql_type == MYSQL_TYPE_VARCHAR)
+            varchar_flag = true;
+
         /*
         Check that the DATE/DATETIME not null field we are going to add is
         either has a default value or the '0000-00-00' is allowed by the
@@ -5936,7 +5945,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
         inplace_info = new Alter_inplace_info(create_info, alter_info, thd->lex->ignore);
 
         if (inplace_info != NULL &&
-            !fill_alter_inplace_info(thd, table, FALSE, inplace_info))
+            !fill_alter_inplace_info(thd, table, varchar_flag, inplace_info))
         {
 
             support_flag = table->file->check_if_supported_inplace_alter(thd, table, inplace_info);

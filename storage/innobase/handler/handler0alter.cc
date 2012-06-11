@@ -1561,7 +1561,7 @@ innobase_add_columns_simple(
 )
 {
     pars_info_t*	info;
-    ulint   		error_no;
+    ulint   		error_no = DB_SUCCESS;
     Alter_info*     alter_info = static_cast<Alter_info*>(inplace_info->alter_info);
     Create_field*   cfield;
     List_iterator<Create_field> def_it(alter_info->create_list);
@@ -1704,7 +1704,7 @@ innobase_add_columns_simple(
         }
         idx ++;
 
-        ut_ad((ulint)(col_name - col_names) < 200 * tmp_table->s->fields);
+        ut_a((ulint)(col_name - col_names) < 200 * tmp_table->s->fields);
     }
 
     info = pars_info_create();  /* que_eval_sql执行完会释放 */
@@ -2091,7 +2091,7 @@ ha_innobase::inplace_alter_table(
 
         /* inplace alter table rollback日志 */
         ut_print_timestamp(stderr);
-        fprintf(stderr, "  [InnoDB inplace alter table]  rollback, error no : %d,  query: %s; db_name:%s; tmp_name: %s \n", err, ha_query(), table->s->db.str, tmp_table->alias);
+        fprintf(stderr, "  [InnoDB inplace alter table]  rollback, error no : %u,  query: %s; db_name:%s; tmp_name: %s \n", err, ha_query(), table->s->db.str, tmp_table->alias);
     }
 
     /* 锁什么时候释放 */
