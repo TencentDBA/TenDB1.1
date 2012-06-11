@@ -6069,6 +6069,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     uint candidate_key_count= 0;
     bool no_pk;
     Alter_inplace_info*     inplace_info = NULL;
+	TABLE*  tmp_table_for_inplace=NULL;
     DBUG_ENTER("mysql_alter_table");
 
     /*
@@ -7052,19 +7053,15 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
 
         filename_len = build_table_filename(filename, sizeof(filename) - 1, new_db, tmp_name, "", FN_IS_TMP);
 
-        TABLE*  tmp_table = find_temporary_table(thd, filename, filename_len);
-        if (!tmp_table)
-        {
-            tmp_table = open_table_uncached(thd, filename, new_db, tmp_name, TRUE, false);
-            DBUG_ASSERT(tmp_table != NULL);
-        }
+		/* note! here do not add the tmp_table to thread's temp table list */
+        tmp_table_for_inplace = open_table_uncached(thd, filename, new_db, tmp_name, FALSE, false);
+		DBUG_ASSERT(tmp_table_for_inplace != NULL);
 
-        if (mysql_inplace_alter_table(thd, table, tmp_table, inplace_info))
+        if (mysql_inplace_alter_table(thd, table, tmp_table_for_inplace, inplace_info))
         {
-            /* 错误处理，参考5.6 */
+            /* 错误处理，参考5.6 */			
             goto err_new_table_cleanup;
         }
-
     }
 
     if (pending_inplace_add_index)
@@ -7081,7 +7078,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
             goto err_new_table_cleanup;
         }
     }
-
+	
     close_all_tables_for_name(thd, table->s,
         new_name != table_name || new_db != db);
 
@@ -7116,18 +7113,19 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
             if (mysql_rename_table(NULL, new_db, tmp_name, new_db,
                 new_alias, FN_FROM_IS_TMP))
             {
-                /* rename失败，临时frm还在 */
+                /* rename失败，临时frm还在 */				
                 error = 1;
             }
-
             goto end_inplace_alter;
         }
 
     }
+
+	
     if (mysql_rename_table(old_db_type, db, table_name, db, old_name,
         FN_TO_IS_TMP))
     {
-        error=1;
+        error=1;		
         (void) quick_rm_table(new_db_type, new_db, tmp_name, FN_IS_TMP);
     }
     else if (mysql_rename_table(new_db_type, new_db, tmp_name, new_db,
@@ -7140,17 +7138,24 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         new_db, new_alias)))
     {
         /* Try to get everything back. */
-        error=1;
+        error=1;		
         (void) quick_rm_table(new_db_type,new_db,new_alias, 0);
         (void) quick_rm_table(new_db_type, new_db, tmp_name, FN_IS_TMP);
         (void) mysql_rename_table(old_db_type, db, old_name, db, alias,
             FN_FROM_IS_TMP);
     }
 
-    if (! error)
+	if (! error){
         (void) quick_rm_table(old_db_type, db, old_name, FN_IS_TMP);
+	}
 
 end_inplace_alter:
+	if (tmp_table_for_inplace)
+	{
+	  /* auto clear fast alter table's tmp table */
+	  close_temporary_for_inplace(tmp_table_for_inplace, true, true);
+	}
+
     if (error)
     {
         /* This shouldn't happen. But let us play it safe. */
@@ -7185,6 +7190,7 @@ end_inplace_alter:
             table_list->mdl_request.ticket= mdl_ticket;
             t_table_list= table_list;
         }
+		
         if (open_table(thd, t_table_list, thd->mem_root, &ot_ctx))
         {
             goto err_with_mdl;
@@ -7194,7 +7200,7 @@ end_inplace_alter:
         error= t_table_list->table->file->ha_create_handler_files(path, NULL,
             CHF_INDEX_FLAG,
             create_info);
-
+		
         DBUG_ASSERT(thd->open_tables == t_table_list->table);
         close_thread_table(thd, &thd->open_tables);
         t_table_list->table= NULL;
@@ -7227,6 +7233,7 @@ end_inplace_alter:
         DBUG_RETURN(TRUE);
     }
 
+	
     if (ha_check_storage_engine_flag(old_db_type, HTON_FLUSH_AFTER_RENAME))
     {
         /*
@@ -7239,7 +7246,7 @@ end_inplace_alter:
         build_table_filename(path + 1, sizeof(path) - 1, new_db, table_name, "", 0);
         t_table= open_table_uncached(thd, path, new_db, tmp_name, FALSE, true);
         if (t_table)
-        {
+        {			
             intern_close_table(t_table);
             my_free(t_table);
         }
@@ -7248,6 +7255,7 @@ end_inplace_alter:
             new_db,table_name);
         ha_flush_logs(old_db_type);
     }
+	
     table_list->table=0;				// For query cache
     query_cache_invalidate3(thd, table_list, 0);
 
@@ -7278,10 +7286,13 @@ err_new_table_cleanup:
     {
         /* close_temporary_table() frees the new_table pointer. */
         close_temporary_table(thd, new_table, 1, 1);
+		
     }
-    else
+	else{
         (void) quick_rm_table(new_db_type, new_db, tmp_name,
         create_info->frm_only ? FN_IS_TMP | FRM_ONLY : FN_IS_TMP);
+		
+	}
 
 err:
 #ifdef WITH_PARTITION_STORAGE_ENGINE

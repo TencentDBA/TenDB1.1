@@ -2225,6 +2225,29 @@ void close_temporary(TABLE *table, bool free_share, bool delete_table)
   DBUG_VOID_RETURN;
 }
 
+void close_temporary_for_inplace(TABLE *table, bool free_share, bool delete_table)
+{
+  //handlerton *table_type= table->s->db_type();
+  DBUG_ENTER("close_temporary");
+  DBUG_PRINT("tmptable", ("closing table: '%s'.'%s'",
+	table->s->db.str, table->s->table_name.str));
+
+  free_io_cache(table);
+  closefrm(table, 0);
+  if (delete_table)
+  {
+	mysql_file_delete(key_file_frm, table->s->path.str, MYF(0));
+	/* 从rm_temporary_table(NULL, table->s->path.str);简化得到,不执行存储引擎底层删表操作 */
+  }
+	
+  if (free_share)
+  {
+	free_table_share(table->s);
+	my_free(table);
+  }
+  DBUG_VOID_RETURN;
+}
+
 
 /*
   Used by ALTER TABLE when the table is a temporary one. It changes something
