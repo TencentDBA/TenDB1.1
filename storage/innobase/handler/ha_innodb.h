@@ -82,7 +82,6 @@ Gets the InnoDB transaction handle for a MySQL handler object, creates
 an InnoDB transaction struct if the corresponding MySQL thread struct still
 lacks one.
 @return	InnoDB transaction handle */
-inline
 trx_t*
 check_trx_exists(
 /*=============*/
