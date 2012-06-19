@@ -1593,6 +1593,7 @@ dict_load_table_low(
 	ulint		n_cols;
 	ulint		flags;
     ibool       is_gcs = FALSE;
+    ulint       n_cols_before_alter_table = 0;
 
 	if (UNIV_UNLIKELY(rec_get_deleted_flag(rec, 0))) {
 		return("delete-marked record in SYS_TABLES");
@@ -1700,6 +1701,11 @@ err_len:
 
 		flags2 = mach_read_from_4(field);
 
+        /* 对GCS表，mix_len的高两字节是保存alter table add column前的字段数 */
+        n_cols_before_alter_table = (flags2 & 0xFFFF0000) >> 16;
+        ut_ad(n_cols_before_alter_table == 0 || is_gcs);
+        flags2 &= flags2 & 0x0000FFFF;
+
 		if (flags2 & (~0 << (DICT_TF2_BITS - DICT_TF2_SHIFT))) {
 			ut_print_timestamp(stderr);
 			fputs("  InnoDB: Warning: table ", stderr);
@@ -1719,7 +1725,7 @@ err_len:
 
 	/* See if the tablespace is available. */
 	*table = dict_mem_table_create(name, space, n_cols & ~0xC0000000UL,         /*修改掩码*/
-				       flags, is_gcs);
+				       flags, is_gcs, n_cols_before_alter_table);
 
 	field = rec_get_nth_field_old(rec, 3/*ID*/, &len);
 	ut_ad(len == 8); /* this was checked earlier */

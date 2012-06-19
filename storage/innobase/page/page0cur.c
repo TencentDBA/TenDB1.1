@@ -914,7 +914,7 @@ page_cur_parse_insert_rec(
 
         /* 增加断言 */
         ut_ad (!rec_is_gcs(buf + origin_offset) ||
-                (dict_index_is_clust(index) && dict_table_is_gcs(index->table) && 
+                (dict_index_is_gcs_clust_after_alter_table(index)  && 
                     (rec_gcs_get_field_count(buf + origin_offset, NULL) == dict_index_get_n_fields(index) ||    /* 要不一致，要不正在恢复。 */
                         recv_recovery_is_on())));               /* 恢复过程不一致很可能是MLOG_COMP_LIST_END_COPY_CREATED造成的 */
 	} else {

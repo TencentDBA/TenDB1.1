@@ -2003,19 +2003,9 @@ btr_cur_optimistic_update(
 		rec_print_new(stderr, rec, offsets);
 	}
 #endif /* UNIV_DEBUG */
-
-    if (rec_is_gcs(rec))
-    {
-        ut_ad(dict_index_is_clust(index) && dict_table_is_gcs(index->table));
-
-        field_count = rec_gcs_get_field_count(rec, NULL);
-    }
-    else
-        field_count = dict_index_get_n_fields(index);
     
 
-	if (field_count == dict_index_get_n_fields(index) &&                        /* 非gcs老行（不是alter table之前生成的行） */
-        !row_upd_changes_field_size_or_external(index, offsets, update)) {
+	if (!row_upd_changes_field_size_or_external(index, offsets, update)) {
 
 		/* The simplest and the most common case: the update does not
 		change the size of any field and none of the updated fields is

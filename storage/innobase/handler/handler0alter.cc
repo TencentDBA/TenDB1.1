@@ -1575,6 +1575,7 @@ innobase_add_columns_simple(
     char*           col_name = NULL;
     ulint           lock_retry = 0;
     ibool           locked = FALSE;
+    ulint           n_cols_before_alter = 0;
 
     DBUG_ENTER("innobase_add_columns_simple");
 
@@ -1714,6 +1715,21 @@ innobase_add_columns_simple(
     ut_ad(dict_table_is_gcs(table));
 
     pars_info_add_int4_literal(info, "n_col", tmp_table->s->fields | (1 << 31) | (1 << 30));
+    
+    if (table->n_cols_before_alter_table > 0)
+    {
+        n_cols_before_alter = table->n_cols_before_alter_table - DATA_N_SYS_COLS;
+        ut_ad(n_cols_before_alter > 0);
+    }
+    else
+    {
+        /* 第一次alter table add column */
+        n_cols_before_alter = dict_table_get_n_cols(table) - DATA_N_SYS_COLS;
+    }
+
+    /* 必定不是临时表 */
+    ut_ad(!(table->flags >> DICT_TF2_SHIFT));
+    pars_info_add_int4_literal(info, "mix_len", n_cols_before_alter << 16);     /* 存在高两字节！ */
     pars_info_add_str_literal(info, "table_name", table->name);
     
     /* 更新列数 */
@@ -1721,7 +1737,7 @@ innobase_add_columns_simple(
         info,
         "PROCEDURE UPDATE_SYS_TABLES_N_COLS_PROC () IS\n"
         "BEGIN\n"
-        "UPDATE SYS_TABLES SET N_COLS = :n_col \n"
+        "UPDATE SYS_TABLES SET N_COLS = :n_col, MIX_LEN = :mix_len \n"
         "WHERE NAME = :table_name;\n"
         "END;\n",
         FALSE, trx);

@@ -1627,7 +1627,7 @@ pars_create_table(
 	/* As the InnoDB SQL parser is for internal use only,
 	for creating some system tables, this function will only
 	create tables in the old (not compact) record format. */
-	table = dict_mem_table_create(table_sym->name, 0, n_cols, 0, FALSE);
+	table = dict_mem_table_create(table_sym->name, 0, n_cols, 0, FALSE, 0);
 
 #ifdef UNIV_DEBUG
 	if (not_fit_in_memory != NULL) {

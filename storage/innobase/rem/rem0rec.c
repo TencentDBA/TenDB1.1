@@ -186,8 +186,7 @@ rec_get_n_extern_new(
         ulint field_count = 0;
         ulint n_nullable = 0;
 
-        ut_ad(rec_get_status(rec) == REC_STATUS_ORDINARY && 
-            dict_index_is_clust(index) && dict_table_is_gcs(index->table));
+        ut_ad(dict_index_is_gcs_clust_after_alter_table(index));
 
         field_count = rec_gcs_get_field_count(rec, &field_count_len);
         ut_ad(field_count_len == rec_gcs_get_feild_count_len(field_count));
@@ -199,6 +198,17 @@ rec_get_n_extern_new(
         nulls = rec - (REC_N_NEW_EXTRA_BYTES + field_count_len + 1);
         lens  = nulls - UT_BITS_IN_BYTES(n_nullable);
 
+        /* 最后n-field_count列要么NULL,要么默认值，不可能是大字段 */
+        n = field_count;                /* 也修改了以前的一个bug！ */
+    }
+    else if (dict_index_is_gcs_clust_after_alter_table(index))
+    {
+        ut_ad(index->n_fields_before_alter > 0);
+        nulls = rec - (REC_N_NEW_EXTRA_BYTES + 1);
+        lens = nulls - UT_BITS_IN_BYTES(index->n_nullable_before_alter);
+
+        /* 最后n - index->n_fields_before_alter列要么NULL,要么默认值，不可能是大字段 */
+        n = index->n_fields_before_alter;
     }
     else
     {
@@ -259,6 +269,7 @@ rec_get_n_extern_new(
 	return(n_extern);
 }
 
+
 /*******************************************************************//**
 Get the bit number of nullable bitmap. */
 UNIV_INTERN
@@ -270,29 +281,14 @@ rec_gcs_get_n_nullable(
 {
     ulint           field_count = 0;
     ulint           field_count_len = 0;
-    const dict_field_t*   ifield;
-    ulint           i = 0;
-    ulint           n_nullable = index->n_nullable;
     
-    ut_ad(rec_is_gcs(rec) && dict_index_is_clust(index) &&
+    ut_ad(rec_is_gcs(rec) && dict_index_is_gcs_clust_after_alter_table(index) &&
             dict_table_is_gcs(index->table));
-    ut_ad(rec_get_status(rec) == REC_STATUS_ORDINARY);
 
     field_count = rec_gcs_get_field_count(rec, &field_count_len);
     ut_ad(field_count_len == rec_gcs_get_feild_count_len(field_count));
 
-    for (i = field_count; i < dict_index_get_n_fields(index); ++i)
-    {
-        ifield = dict_index_get_nth_field(index, i);
-
-        if (dict_col_is_nullable(dict_field_get_col(ifield)))
-        {
-            n_nullable--;
-        }
-        
-    }
-        
-    return n_nullable;
+    return dict_index_get_first_n_field_n_nullable(index, field_count);
 }
 
 /******************************************************//**
@@ -322,15 +318,18 @@ rec_init_offsets_comp_ordinary(
 	byte*	    lens		= NULL;
 	dict_field_t*	field;
 	ulint		null_mask	= 1;
-    ulint       field_count_for_gcs = 0;
-    ulint       n_null_for_gcs = 0;
+    ulint       field_count_for_gcs = ULINT_UNDEFINED;      /* 初始化为最大值 */
+    ulint       n_null_for_gcs = ULINT_UNDEFINED;
 
-    is_gcs = extra > 0 && rec_is_gcs(rec);
+    is_gcs = rec_is_gcs(rec);
 
-    if (is_gcs)
+    if (extra > 0 && is_gcs)
     {
+        /*
+            gcs记录
+        */
         ulint           field_count_len;
-        ut_ad(dict_index_is_clust(index) && dict_table_is_gcs(index->table));
+        ut_ad(dict_index_is_gcs_clust_after_alter_table(index));
         ut_ad(extra == REC_N_NEW_EXTRA_BYTES);
 
         field_count_for_gcs = rec_gcs_get_field_count(rec, &field_count_len);
@@ -339,8 +338,26 @@ rec_init_offsets_comp_ordinary(
         n_null_for_gcs  = rec_gcs_get_n_nullable(rec, index);
         lens		= nulls - UT_BITS_IN_BYTES(n_null_for_gcs);
     }
+    else if (extra > 0 && dict_index_is_gcs_clust_after_alter_table(index))
+    {
+        /*
+            gcs表聚集索引，并且已经快速加字段
+        */
+        ut_ad(index->n_fields_before_alter > 0);
+        field_count_for_gcs = index->n_fields_before_alter;
+        n_null_for_gcs  = index->n_nullable_before_alter;
+
+        nulls		= (byte*)rec - (extra + 1);
+        lens		= nulls - UT_BITS_IN_BYTES(n_null_for_gcs);
+    }
     else
     {
+        /*
+            三种情况：
+            1. extra为0，
+            2. 非gcs表聚集索引
+            3. gcs表聚集索引，但没有快速加字段
+        */
         nulls		= (byte*)rec - (extra + 1);
         lens		= nulls - UT_BITS_IN_BYTES(index->n_nullable);
     }
@@ -363,7 +380,7 @@ rec_init_offsets_comp_ordinary(
 		      & DATA_NOT_NULL)) {
 			/* nullable field => read the null flag */
 
-            if (is_gcs && j >= n_null_for_gcs)
+            if (j >= n_null_for_gcs)
             {
                 ut_ad(i >= field_count_for_gcs);
 
@@ -392,7 +409,7 @@ rec_init_offsets_comp_ordinary(
 			null_mask <<= 1;
 		}
 
-        if (is_gcs && i >= field_count_for_gcs)
+        if (i >= field_count_for_gcs)
         {
             //TO DO NOT NULL 默认值
         }
@@ -477,12 +494,9 @@ rec_init_offsets(
 		const byte*	nulls;
 		const byte*	lens;
 		dict_field_t*	field;
-        ibool       is_gcs = FALSE;
 		ulint		null_mask;
 		ulint		status = rec_get_status(rec);
 		ulint		n_node_ptr_field = ULINT_UNDEFINED;
-
-        is_gcs = rec_is_gcs(rec);
 
 		switch (UNIV_EXPECT(status, REC_STATUS_ORDINARY)) {
 		case REC_STATUS_INFIMUM:
@@ -503,10 +517,44 @@ rec_init_offsets(
 			return;
 		}
 
-        ut_ad(!is_gcs);
+        if (rec_is_gcs(rec))
+        {
+            /*
+            gcs记录
+            */
+            ulint           field_count_len;
+            ulint           field_count_for_gcs;
+            ut_ad(dict_index_is_gcs_clust_after_alter_table(index));
 
-		nulls = rec - (REC_N_NEW_EXTRA_BYTES + 1);
-		lens = nulls - UT_BITS_IN_BYTES(index->n_nullable);
+            field_count_for_gcs = rec_gcs_get_field_count(rec, &field_count_len);
+            ut_ad(rec_offs_n_fields(offsets) - 1 <= field_count_for_gcs);               /* 1 for node ptr */
+
+            nulls       = (byte*)rec - (REC_N_NEW_EXTRA_BYTES + 1 + field_count_len);
+            lens		= nulls - UT_BITS_IN_BYTES(rec_gcs_get_n_nullable(rec, index));
+        }
+        else if (dict_index_is_gcs_clust_after_alter_table(index))
+        {
+            /*
+            gcs表聚集索引，并且已经快速加字段
+            */
+            ut_ad(index->n_nullable_before_alter > 0);
+            ut_ad(rec_offs_n_fields(offsets) - 1 <= index->n_fields_before_alter);
+
+            nulls		= (byte*)rec - (REC_N_NEW_EXTRA_BYTES + 1);
+            lens		= nulls - UT_BITS_IN_BYTES(index->n_nullable_before_alter);
+        }
+        else
+        {
+            /*
+            三种情况：
+            1. extra为0，
+            2. 非gcs表聚集索引
+            3. gcs表聚集索引，但没有快速加字段
+            */
+            nulls		= (byte*)rec - (REC_N_NEW_EXTRA_BYTES + 1);
+            lens		= nulls - UT_BITS_IN_BYTES(index->n_nullable);
+        }
+
 		offs = 0;
 		null_mask = 1;
 
@@ -895,13 +943,12 @@ rec_get_converted_size_comp_prefix(
 	ut_ad(n_fields > 0);
 	ut_ad(n_fields <= dict_index_get_n_fields(index));
 
-    if (gcs_flag && dict_index_is_clust(index) &&
-        dict_table_is_gcs(index->table))
+    if (gcs_flag && dict_index_is_gcs_clust_after_alter_table(index))
     {
         ulint       field_count_len = 0;
 
         ut_ad(n_fields < 1100);                                         /* 最大1000个字段，但还包含一些系统列 */
-        field_count_len = (n_fields > 127) ? 2 : 1;                     /* 127字段以内使用1个字节，否则使用两个字节 */
+        field_count_len = rec_gcs_get_feild_count_len(n_fields);    	/* 127字段以内使用1个字节，否则使用两个字节 */
 
         extra_size = REC_N_NEW_EXTRA_BYTES + field_count_len;           /* nullable bitmap空间后面计算 */
 
@@ -1001,7 +1048,6 @@ rec_get_converted_size_comp(
 	ulint*			extra)	/*!< out: extra size */
 {
 	ulint	size;
-    ibool   is_leaf = FALSE;
 	ut_ad(index);
 	ut_ad(fields);
 	ut_ad(n_fields > 0);
@@ -1010,7 +1056,6 @@ rec_get_converted_size_comp(
 	case REC_STATUS_ORDINARY:
 		ut_ad(n_fields <= dict_index_get_n_fields(index));
 		size = 0;
-        is_leaf = TRUE;
 		break;
 	case REC_STATUS_NODE_PTR:
 		n_fields--;
@@ -1029,8 +1074,6 @@ rec_get_converted_size_comp(
 		ut_error;
 		return(ULINT_UNDEFINED);
 	}
-
-    gcs_flag &= is_leaf;            /* 必须同为叶子节点记录以及指定gcs_flag才能使用gcs格式 */
 
 	return(size + rec_get_converted_size_comp_prefix(index, fields,
 							 n_fields, gcs_flag, extra));
@@ -1236,7 +1279,6 @@ rec_convert_dtuple_to_rec_comp(
 	ulint		fixed_len;
 	ulint		null_mask	= 1;
     ulint       n_nullable = index->n_nullable;
-    ibool       gcs_flag    = FALSE;
     ibool       is_gcs      = FALSE;
 	ut_ad(extra == 0 || dict_table_is_comp(index->table));
 	ut_ad(extra == 0 || extra == REC_N_NEW_EXTRA_BYTES);
@@ -1245,10 +1287,9 @@ rec_convert_dtuple_to_rec_comp(
 	switch (UNIV_EXPECT(status, REC_STATUS_ORDINARY)) {
 	case REC_STATUS_ORDINARY:
 		ut_ad(n_fields == dict_index_get_n_fields(index) || 
-                (dict_index_is_clust(index) && dict_table_is_gcs(index->table) && 
+                (dict_index_is_gcs_clust_after_alter_table(index) && 
                     n_fields <= dict_index_get_n_fields(index)));
 		n_node_ptr_field = ULINT_UNDEFINED;
-        gcs_flag = TRUE;
 		break;
 	case REC_STATUS_NODE_PTR:
 		ut_ad(n_fields == dict_index_get_n_unique_in_tree(index) + 1);
@@ -1265,24 +1306,14 @@ rec_convert_dtuple_to_rec_comp(
 	}
 
 	end = rec;
-    if (gcs_flag && extra > 0 && dict_index_is_clust(index) &&
-        dict_table_is_gcs(index->table))
+    if (extra > 0 && dict_index_is_gcs_clust_after_alter_table(index))
     {
-        ulint               j;
-        const dict_field_t*	ifield;
         ulint               field_count_len;
 
         ut_a(extra != 0); /* 建索引时候可能为0，但主键？ */
 
         /* 计算真实的n_nullable值 */
-        for (j = n_fields; j < index->n_fields; ++j)
-        {
-            ifield = dict_index_get_nth_field(index, j);
-            if (dict_col_is_nullable(dict_field_get_col(ifield)))
-            {
-                n_nullable--;
-            }
-        }
+        n_nullable = dict_index_get_first_n_field_n_nullable(index, n_fields);
         
         rec_set_gcs_flag(rec, 1);
         field_count_len = rec_gcs_set_field_count(rec, n_fields);                   /* 设置feild count值 */
@@ -1624,8 +1655,7 @@ rec_copy_prefix_to_buf(
         ulint field_count = 0;
         ulint n_nullable = 0;
 
-        ut_ad(status == REC_STATUS_ORDINARY && 
-                dict_index_is_clust(index) && dict_table_is_gcs(index->table));
+        ut_ad(dict_index_is_gcs_clust_after_alter_table(index));
 
         field_count = rec_gcs_get_field_count(rec, &field_count_len);
         ut_ad(field_count_len == rec_gcs_get_feild_count_len(field_count));
@@ -1637,6 +1667,13 @@ rec_copy_prefix_to_buf(
         nulls = rec - (REC_N_NEW_EXTRA_BYTES + field_count_len + 1);
         lens  = nulls - UT_BITS_IN_BYTES(n_nullable);
 
+    }
+    else if (dict_index_is_gcs_clust_after_alter_table(index))
+    {
+        ut_ad(index->n_fields_before_alter > 0 && index->n_fields_before_alter >= n_fields);
+
+        nulls = rec - (REC_N_NEW_EXTRA_BYTES + 1);
+        lens = nulls - UT_BITS_IN_BYTES(index->n_nullable_before_alter);
     }
     else
     {

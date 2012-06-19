@@ -622,6 +622,38 @@ dict_index_is_clust(
 /*================*/
 	const dict_index_t*	index)	/*!< in: index */
 	__attribute__((nonnull, pure, warn_unused_result));
+
+/********************************************************************//**
+Check whether the index is the gcs table's clustered index.
+@return	nonzero for gcs table's clustered index, zero for other indexes */
+UNIV_INLINE
+ulint
+dict_index_is_gcs_clust(
+/*================*/
+	const dict_index_t*	index)	/*!< in: index */
+	__attribute__((nonnull, pure, warn_unused_result));
+
+
+/********************************************************************//**
+@return	 nullable count of index first n fields  */
+UNIV_INLINE
+ulint 
+dict_index_get_first_n_field_n_nullable(
+/*================*/
+    const dict_index_t*     index, 
+    ulint                   first_n_field
+);
+
+/********************************************************************//**
+Check whether the index is the gcs table's clustered index and after alter table.
+@return	nonzero for gcs table's clustered index and after alter table, zero for other indexes */
+UNIV_INLINE
+ulint
+dict_index_is_gcs_clust_after_alter_table(
+/*================*/
+	const dict_index_t*	index)	/*!< in: index */
+	__attribute__((nonnull, pure, warn_unused_result));
+
 /********************************************************************//**
 Check whether the index is unique.
 @return	nonzero for unique index, zero for other indexes */
@@ -736,6 +768,13 @@ dict_table_is_comp(
 UNIV_INLINE
 ibool
 dict_table_is_gcs(
+/*===============*/
+	const dict_table_t*	table);	/*!< in: table */
+/********************************************************************//**
+@return	TRUE if table is gcs table */
+UNIV_INLINE
+ibool
+dict_table_is_gcs_after_alter_table(
 /*===============*/
 	const dict_table_t*	table);	/*!< in: table */
 /********************************************************************//**
