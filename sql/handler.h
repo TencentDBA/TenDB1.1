@@ -1296,10 +1296,13 @@ public:
   ~Alter_inplace_info()
   {
     //delete handler_ctx;
-  }
+  }   
 };
 
 /*************************************** END ADD FROM 5.6  ***************************************/
+
+
+
 
 typedef struct st_key_create_information
 {
@@ -2239,7 +2242,6 @@ public:
  {
     return false;                               /* don't support inplace alter unless innodb */
  }
-
 
 
  /**

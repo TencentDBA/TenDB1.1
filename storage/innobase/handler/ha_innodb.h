@@ -264,8 +264,13 @@ class ha_innobase: public handler
         TABLE                   *table,
         Alter_inplace_info      *inplace_info
     );
-
 	
+	/* check if support fast row_format check*/
+	bool is_support_fast_rowformat_change(
+	  enum row_type new_type,
+	  enum row_type old_type
+	  );
+
 	int inplace_alter_table(
 		TABLE*			altered_table,
         TABLE*          tmp_table,

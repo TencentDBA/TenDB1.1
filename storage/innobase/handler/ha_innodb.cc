@@ -10842,11 +10842,21 @@ ha_innobase::check_if_incompatible_data(
 
 		return COMPATIBLE_DATA_NO;
 	}
+	
+	enum row_type tb_row_type = get_row_type();
 
-	/* Check that row format didn't change */
-	if ((info->used_fields & HA_CREATE_USED_ROW_FORMAT)
+	/*
+	Check that row format didn't change 
+	if the row_format is gcs/compact and the statement is just alter row_format,fast inplace it
+	*/
+	if(info->used_fields == HA_CREATE_USED_ROW_FORMAT ){
+	  if(!is_support_fast_rowformat_change(info->row_type,tb_row_type)){	 
+		return(COMPATIBLE_DATA_NO);
+	  }
+	}	
+	else if ((info->used_fields & HA_CREATE_USED_ROW_FORMAT)
 	    && info->row_type != ROW_TYPE_DEFAULT
-	    && info->row_type != get_row_type()) {
+	    && info->row_type != tb_row_type) {
 
 		return(COMPATIBLE_DATA_NO);
 	}

@@ -4829,6 +4829,8 @@ uint check_geometry_equal_special(Field * old_field, Create_field *new_field){
 	old_field->type() == MYSQL_TYPE_GEOMETRY);
 }
 
+
+
 /*
   SYNOPSIS
     mysql_compare_tables()
@@ -4969,7 +4971,8 @@ mysql_compare_tables(TABLE *table,
       create_info->used_fields & HA_CREATE_USED_ENGINE ||
       create_info->used_fields & HA_CREATE_USED_CHARSET ||                      /* ALTER TABLE tbl_name CONVERT TO CHARACTER SET .. */
       create_info->used_fields & HA_CREATE_USED_DEFAULT_CHARSET ||
-      (table->s->row_type != create_info->row_type) ||                          /* change row_format */
+      ((table->s->row_type != create_info->row_type) &&
+	  (inplace_info && inplace_info->handler_flags != Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG )) ||  /* change row_format */
       create_info->used_fields & HA_CREATE_USED_PACK_KEYS ||
       create_info->used_fields & HA_CREATE_USED_MAX_ROWS ||
       (alter_info->flags & (ALTER_RECREATE | ALTER_FOREIGN_KEY)) ||             /* ALTER TABLE tbl_name FORCE  or  增删外键约束  */
@@ -5912,6 +5915,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     */
     if (add_column_simple_flag && inplace_info_out && alter_info->change_level == ALTER_TABLE_METADATA_ONLY && !thd->lex->ignore)
     {    
+		//这个地方为啥要判断inplace_info_out,地址不合法?
         bool                    support_flag = false;
         /* 进一步检查以下情况 
         
@@ -5926,11 +5930,17 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
         NOTE: alter table t add column (id9 int,key(id9));
         the alter operation above would set the ALTER_ADD_INDEX flag when parse,
         so we check if there are new added indexs when check index above.
-        */
 
-        if(alter_info->flags & ~(ALTER_ADD_COLUMN|ALTER_ADD_INDEX) ||          
-           create_info->options     ||    
-           (create_info->other_options & HA_LEX_CREATE_WITH_PARTITION)){    
+		FOR GCS:
+		  here we add check alter row_format option,
+		  if there only 'alter  table row_format=XXX' to change the row_format,and 
+		  the source and new format is in(GCS,Compact),we asume it can be inplace altered.
+		  so here we skip check the ALTER_OPTIONS!
+        */
+	
+		if(alter_info->flags & ~(ALTER_ADD_COLUMN|ALTER_ADD_INDEX|ALTER_OPTIONS) ||  		  
+		  create_info->options     ||    
+		  (create_info->other_options & HA_LEX_CREATE_WITH_PARTITION)){    
                /* 
                 1.no other alter op allowed 
                 2.no create options allowd,include HA_LEX_CREATE_TMP_TABLE
@@ -7057,8 +7067,11 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         char filename[NAME_LEN+1];
         int  filename_len;
 
-		//这个地方那个断言出错了!
+		//should be ALTER_TABLE_METADATA_ONLY
         DBUG_ASSERT(need_copy_table == ALTER_TABLE_METADATA_ONLY);
+
+		DBUG_ASSERT(inplace_info->handler_flags!=Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG||
+		  inplace_info->create_info->used_fields == HA_CREATE_USED_ROW_FORMAT);
 
         filename_len = build_table_filename(filename, sizeof(filename) - 1, new_db, tmp_name, "", FN_IS_TMP);
 

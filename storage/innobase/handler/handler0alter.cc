@@ -1773,6 +1773,32 @@ err_exit:
     
 }
 
+
+/*
+
+check if the dict support fast alter row_format
+
+return:
+false  success
+true   errno
+
+
+*/
+ulint
+innobase_alter_row_format_simple(
+								 /*===================*/
+								 mem_heap_t*         heap,
+								 trx_t*			    trx,
+								 dict_table_t*       table,
+								 TABLE*              tmp_table,
+								 Alter_inplace_info* inplace_info
+								 ){
+	DBUG_ENTER("innobase_alter_row_format_simple");
+
+	DBUG_RETURN(false);
+
+}
+
 /** Rename a column.
 @param table_share	the TABLE_SHARE
 @param prebuilt		the prebuilt struct
@@ -1954,7 +1980,7 @@ err_exit:
 }
 
 /*
-
+false: not suport
 true: support
 */
 UNIV_INTERN
@@ -1968,14 +1994,39 @@ ha_innobase::check_if_supported_inplace_alter(
 {
     DBUG_ENTER("check_if_supported_inplace_alter");
 
-    //to do: check gcs,
+	ut_ad(inplace_info);
 
-    HA_CREATE_INFO * create_info = inplace_info->create_info;
+	HA_CREATE_INFO * create_info = inplace_info->create_info;
+	enum row_type tb_innodb_row_type = get_row_type();
 
-    /* 如果行格式不是GCS,或者创建的行格式与底层的行格式不一样,则不能直接快速alter */
-    if(ROW_TYPE_GCS != get_row_type() || 
+	/*
+	check for fast alter row_format:
+	if theree are alter row_format in the alter statement,
+	and the NEW/OLD row_format are in GCS or COMPACT,we can fast alter it,
+	or we cannot fast alter.
+	
+	we returned directly if row_format modified,so the judgement below wouldn't be affected.
+	*/
+
+	if(inplace_info->handler_flags == Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG){
+
+	  if(create_info->used_fields ==HA_CREATE_USED_ROW_FORMAT 
+		&& this->is_support_fast_rowformat_change(create_info->row_type,tb_innodb_row_type)){
+		  //todo: check the dict if suport ,if the row format have been gcs,cannot change to compact
+		  DBUG_RETURN(true);
+	  }		
+
+	  DBUG_RETURN(false);
+	}
+
+    //check gcs fast add column   
+
+    /* 
+	如果行格式不是GCS,或者创建的行格式与底层的行格式不一样,则不能直接快速alter 
+	*/
+    if( ROW_TYPE_GCS != tb_innodb_row_type || 
 		( (create_info->used_fields & HA_CREATE_USED_ROW_FORMAT) &&
-		  create_info->row_type != get_row_type() )){
+		  create_info->row_type != tb_innodb_row_type )){
             DBUG_RETURN(false);
     }
 
@@ -1988,6 +2039,35 @@ ha_innobase::check_if_supported_inplace_alter(
     
     DBUG_RETURN(true);
 }
+
+/*
+  check if the fast row format alter can  excute
+*/
+
+UNIV_INTERN
+bool
+ha_innobase::is_support_fast_rowformat_change(
+ /*=============================*/
+ enum row_type		  new_type,
+ enum row_type		  old_type){
+
+   DBUG_ENTER("is_support_fast_rowformat_change");
+   if(new_type == ROW_TYPE_GCS && old_type == ROW_TYPE_COMPACT)
+	 DBUG_RETURN(true);
+
+   if(new_type == ROW_TYPE_COMPACT && old_type == ROW_TYPE_GCS){
+	 /*
+	 here to check the dict if support change from gcs to compact
+	 if the table have been fast add column,the row_format have changed to 'real' GCS row_format,
+	 you cannot fast alter the table's row_format(check the total column in the dict).
+	 */
+	 //todo:
+	 //this->prebuilt->table
+   }
+  
+   DBUG_RETURN(false);
+}
+
 
 UNIV_INTERN
 int
@@ -2070,8 +2150,11 @@ ha_innobase::inplace_alter_table(
     {
         err = innobase_add_columns_simple(heap, trx, dict_table, tmp_table, ha_alter_info);
     }
-    else 
-    {
+	else if(ha_alter_info->handler_flags == Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG)
+	{
+		//fast alter table row format!
+		
+	}else{
         ut_ad(FALSE);
         //to do 暂时断言
     }
