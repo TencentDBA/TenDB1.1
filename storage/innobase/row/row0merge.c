@@ -2333,7 +2333,7 @@ row_merge_create_temporary_table(
 	ut_ad(table);
 	ut_ad(mutex_own(&dict_sys->mutex));
 
-	new_table = dict_mem_table_create(table_name, 0, n_cols, table->flags, table->is_gcs);
+	new_table = dict_mem_table_create(table_name, 0, n_cols, table->flags, table->is_gcs, 0);   /* 重建主键相当于重建表，n_cols_before_alter必为0 */
 
 	for (i = 0; i < n_cols; i++) {
 		const dict_col_t*	col;

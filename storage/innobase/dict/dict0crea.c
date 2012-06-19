@@ -132,6 +132,8 @@ dict_create_sys_tables_tuple(
 	ptr = mem_heap_alloc(heap, 4);
 	mach_write_to_4(ptr, table->flags >> DICT_TF2_SHIFT);
 
+    ut_ad(table->n_cols_before_alter_table == 0);
+
 	dfield_set_data(dfield, ptr, 4);
 	/* 8: CLUSTER_NAME ---------------------*/
 	dfield = dtuple_get_nth_field(entry, 6/*CLUSTER_NAME*/);

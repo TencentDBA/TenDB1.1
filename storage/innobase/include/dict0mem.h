@@ -151,7 +151,8 @@ dict_mem_table_create(
 					a member of a cluster */
 	ulint		n_cols,		/*!< in: number of columns */
     ulint		flags,	    /*!< in: table flags */
-    ibool       is_gcs);     /*!< in: gcs table flag */
+    ibool       is_gcs, /*!< in: gcs table flag */
+    ulint       n_cols_before_alter);     /*!< in: number of columns before gcs table alter table */
 /****************************************************************//**
 Free a table memory object. */
 UNIV_INTERN
@@ -401,6 +402,10 @@ struct dict_index_struct{
 				dict_sys->mutex, dict_operation_lock and
 				index->lock.*/
 	dict_field_t*	fields;	/*!< array of field descriptions */
+
+    unsigned    n_nullable_before_alter:10;                     /*!< non-gcs table£¬always 0; gcs table: before alter table 0, after alter table add column, maybe less than n_nullable */
+    unsigned    n_fields_before_alter:10;                       /*!< non-gcs table£¬always 0; gcs table: before alter table 0, after alter table add column, must less than n_nullable */
+
 #ifndef UNIV_HOTBACKUP
 	UT_LIST_NODE_T(dict_index_t)
 			indexes;/*!< list of indexes of the table */
@@ -543,6 +548,7 @@ struct dict_table_struct{
 				allocated from a temporary heap.  The final
 				string will be allocated from table->heap. */
     ibool       is_gcs;         /* whether is gcs table */
+    ulint       n_cols_before_alter_table;      /* valid only in gcs table, >0 means has alter table add column */
 #ifndef UNIV_HOTBACKUP
 	hash_node_t	name_hash; /*!< hash chain node */
 	hash_node_t	id_hash; /*!< hash chain node */

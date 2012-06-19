@@ -63,7 +63,9 @@ dict_mem_table_create(
 				a cluster */
 	ulint		n_cols,	/*!< in: number of columns */
 	ulint		flags,	/*!< in: table flags */
-    ibool       is_gcs) /*!< in: gcs table flag */
+    ibool       is_gcs, /*!< in: gcs table flag */
+    ulint       n_cols_before_alter     /*!< in: number of columns before gcs table alter table */
+)
 {
 	dict_table_t*	table;
 	mem_heap_t*	heap;
@@ -95,6 +97,11 @@ dict_mem_table_create(
 
 	table->autoinc = 0;
     table->is_gcs  = is_gcs;
+    ut_ad(!n_cols_before_alter || is_gcs);      /* 仅对gcs表有效，其他表必为0 */
+    if (n_cols_before_alter > 0)
+        table->n_cols_before_alter_table = (ulint)(n_cols_before_alter +  DATA_N_SYS_COLS);
+    else
+        table->n_cols_before_alter_table = 0;
 
 	/* The number of transactions that are either waiting on the
 	AUTOINC lock or have been granted the lock. */
@@ -418,6 +425,7 @@ dict_mem_table_add_col_simple(
     char*                   new_col_names;
     dict_field_t*           fields;
     ulint                   i;
+	ibool					first_alter = FALSE;
     
     ut_ad(dict_table_is_gcs(table) && table->cached);
     ut_ad(table->n_def < n_col + DATA_N_SYS_COLS && table->n_def  == table->n_cols);
@@ -425,6 +433,13 @@ dict_mem_table_add_col_simple(
     org_heap_size = mem_heap_get_size(table->heap);
 
     org_cols = table->cols;
+
+    if (table->n_cols_before_alter_table == 0)
+    {
+		first_alter = TRUE;
+        /* 若第一次alter table add column，修改该值 */
+        table->n_cols_before_alter_table = table->n_cols;
+    }
 
     /* 拷贝前N列（用户列）及列名 */
     table->cols = mem_heap_zalloc(table->heap, sizeof(dict_col_t) * (DATA_N_SYS_COLS + n_col));
@@ -494,13 +509,12 @@ dict_mem_table_add_col_simple(
 
             ut_ad(index->n_fields == index->n_def);
 
-            //index->n_nullable   += n_add_col_nullable;  
-            //index->n_user_defined_cols += add_n_cols;
-            //index->n_def        += add_n_cols;
-
-            //             trx_is_strict(trx)
-            //                 || dict_table_get_format(node->table)
-            //                 >= DICT_TF_FORMAT_ZIP
+            if (index->n_fields_before_alter == 0)
+            {
+				ut_ad(first_alter);
+                index->n_fields_before_alter = index->n_fields - (table->n_cols - table->n_cols_before_alter_table);
+                index->n_nullable_before_alter = dict_index_get_first_n_field_n_nullable(index, index->n_fields_before_alter);
+            }
         }
         else
         {

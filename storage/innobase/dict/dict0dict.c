@@ -1517,7 +1517,7 @@ dict_index_max_size_for_tree(
 		maximum possible record size. */
 		rec_max_size += UT_BITS_IN_BYTES(new_index->n_nullable);
 
-        if (dict_index_is_clust(new_index) && dict_table_is_gcs(table))
+        if (dict_index_is_gcs_clust(new_index))
         {
             //ut_ad(new_index->table == table);
             rec_max_size += 2;                  /* 两字节field_count，最差情况考虑 */
@@ -1683,7 +1683,7 @@ dict_index_too_big_for_tree(
 		maximum possible record size. */
 		rec_max_size += UT_BITS_IN_BYTES(new_index->n_nullable);
 
-        if (dict_index_is_clust(new_index) && dict_table_is_gcs(table))
+        if (dict_index_is_gcs_clust(new_index))
         {
             //ut_ad(new_index->table == table);
             rec_max_size += 2;                  /* 两字节field_count，最差情况考虑 */
@@ -1949,6 +1949,21 @@ undo_size_ok:
 			new_index->stat_n_diff_key_vals[i] = 100;
 		}
 	}
+
+    /* 如果是gcs表的聚集索引，并且已经快速加字段 */
+    if (dict_index_is_gcs_clust_after_alter_table(new_index))
+    {
+        ut_ad(table->n_cols == table->n_def);
+        ut_ad(table->n_cols_before_alter_table > 0 &&
+            table->n_cols_before_alter_table < table->n_cols);
+        new_index->n_fields_before_alter = new_index->n_fields - (table->n_cols - table->n_cols_before_alter_table);
+        new_index->n_nullable_before_alter  = dict_index_get_first_n_field_n_nullable(new_index, new_index->n_fields_before_alter);
+    }
+    else
+    {
+        new_index->n_nullable_before_alter = 0;
+        new_index->n_fields_before_alter = 0;
+    }
 
 	dict_sys->size += mem_heap_get_size(new_index->heap);
 
@@ -4459,7 +4474,7 @@ dict_index_calc_min_rec_len(
 	if (comp) {
 		ulint nullable = 0;
 		sum = REC_N_NEW_EXTRA_BYTES;
-        if (dict_index_is_clust(index) && dict_table_is_gcs(index->table))
+        if (dict_index_is_gcs_clust_after_alter_table(index))           /* 只有alter table后才需要这两字节 */
         {
             sum += rec_gcs_get_feild_count_len(index->n_fields);
         }
@@ -5047,7 +5062,7 @@ dict_ind_init(void)
 	dict_table_t*		table;
 
 	/* create dummy table and index for REDUNDANT infimum and supremum */
-	table = dict_mem_table_create("SYS_DUMMY1", DICT_HDR_SPACE, 1, 0, FALSE);
+	table = dict_mem_table_create("SYS_DUMMY1", DICT_HDR_SPACE, 1, 0, FALSE, 0);
 	dict_mem_table_add_col(table, NULL, NULL, DATA_CHAR,
 			       DATA_ENGLISH | DATA_NOT_NULL, 8);
 
@@ -5058,7 +5073,7 @@ dict_ind_init(void)
 	dict_ind_redundant->table = table;
 	/* create dummy table and index for COMPACT infimum and supremum */
 	table = dict_mem_table_create("SYS_DUMMY2",
-				      DICT_HDR_SPACE, 1, DICT_TF_COMPACT, FALSE);
+				      DICT_HDR_SPACE, 1, DICT_TF_COMPACT, FALSE, 0);
 	dict_mem_table_add_col(table, NULL, NULL, DATA_CHAR,
 			       DATA_ENGLISH | DATA_NOT_NULL, 8);
 	dict_ind_compact = dict_mem_index_create("SYS_DUMMY2", "SYS_DUMMY2",

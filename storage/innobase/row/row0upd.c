@@ -419,6 +419,14 @@ row_upd_changes_field_size_or_external(
 	ulint			new_len;
 	ulint			n_fields;
 	ulint			i;
+    ulint           n_fields_before_alter = ULINT_UNDEFINED;
+
+    if (dict_index_is_gcs_clust_after_alter_table(index))
+    {
+        ut_ad(index->n_fields_before_alter > 0);
+        n_fields_before_alter = index->n_fields_before_alter;
+    }
+    
 
 	ut_ad(rec_offs_validate(NULL, index, offsets));
 	n_fields = upd_get_n_fields(update);
@@ -428,6 +436,11 @@ row_upd_changes_field_size_or_external(
 
 		new_val = &(upd_field->new_val);
 		new_len = dfield_get_len(new_val);
+
+        /* 更新列是alter table后加的列 */
+        ut_ad((ulint)upd_field->field_no != ULINT_UNDEFINED);
+        if ((ulint)upd_field->field_no >= n_fields_before_alter)
+            return(TRUE);
 
 		if (dfield_is_null(new_val) && !rec_offs_comp(offsets)) {
 			/* A bug fixed on Dec 31st, 2004: we looked at the
@@ -495,7 +508,7 @@ row_upd_rec_in_place(
 
         ibool   is_gcs = rec_is_gcs(rec);
         
-        ut_ad(!is_gcs || (dict_index_is_clust(index) && dict_table_is_gcs(index->table) &&
+        ut_ad(!is_gcs || (dict_index_is_gcs_clust_after_alter_table(index) &&
             rec_gcs_get_field_count(rec, NULL) <= dict_index_get_n_fields(index)));             /* 正常原地更新不存在字典不一致的情况，如果不一致就不会执行原地更新。但如row_vers_impl_x_locked_off_kernel需要构建原版本记录，需利用这接口，这种情况下有可能不一致 */
 
         rec_set_info_bits_new(rec, update->info_bits);
