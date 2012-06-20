@@ -1517,7 +1517,8 @@ dict_index_max_size_for_tree(
 		maximum possible record size. */
 		rec_max_size += UT_BITS_IN_BYTES(new_index->n_nullable);
 
-        if (dict_index_is_gcs_clust(new_index))
+        /* 此时new_index的table可能为null，需要分别判断 */
+        if (dict_index_is_clust(new_index) && dict_table_is_gcs(table))
         {
             //ut_ad(new_index->table == table);
             rec_max_size += 2;                  /* 两字节field_count，最差情况考虑 */
@@ -1683,7 +1684,8 @@ dict_index_too_big_for_tree(
 		maximum possible record size. */
 		rec_max_size += UT_BITS_IN_BYTES(new_index->n_nullable);
 
-        if (dict_index_is_gcs_clust(new_index))
+        /* 此时new_index的table可能为null，需要分别判断 */
+        if (dict_index_is_clust(new_index) && dict_table_is_gcs(table))
         {
             //ut_ad(new_index->table == table);
             rec_max_size += 2;                  /* 两字节field_count，最差情况考虑 */

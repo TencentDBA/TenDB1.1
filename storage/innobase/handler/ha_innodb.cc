@@ -10850,7 +10850,7 @@ ha_innobase::check_if_incompatible_data(
 	if the row_format is gcs/compact and the statement is just alter row_format,fast inplace it
 	*/
 	if(info->used_fields == HA_CREATE_USED_ROW_FORMAT ){
-	  if(!is_support_fast_rowformat_change(info->row_type,tb_row_type)){	 
+	  if(is_support_fast_rowformat_change(info->row_type,tb_row_type) == INNODB_ROW_FORMAT_CHANGE_NO){	 
 		return(COMPATIBLE_DATA_NO);
 	  }
 	}	

@@ -4972,7 +4972,7 @@ mysql_compare_tables(TABLE *table,
       create_info->used_fields & HA_CREATE_USED_CHARSET ||                      /* ALTER TABLE tbl_name CONVERT TO CHARACTER SET .. */
       create_info->used_fields & HA_CREATE_USED_DEFAULT_CHARSET ||
       ((table->s->row_type != create_info->row_type) &&
-	  (inplace_info && inplace_info->handler_flags != Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG )) ||  /* change row_format */
+	  (!inplace_info || inplace_info->handler_flags != Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG )) ||  /* change row_format */
       create_info->used_fields & HA_CREATE_USED_PACK_KEYS ||
       create_info->used_fields & HA_CREATE_USED_MAX_ROWS ||
       (alter_info->flags & (ALTER_RECREATE | ALTER_FOREIGN_KEY)) ||             /* ALTER TABLE tbl_name FORCE  or  тЖи╬мБ╪Эт╪йЬ  */

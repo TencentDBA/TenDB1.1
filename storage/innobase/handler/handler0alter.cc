@@ -1808,8 +1808,10 @@ innobase_alter_row_format_simple(
 	trx_t*			    trx,
 	dict_table_t*       table,	
 	TABLE*              tmp_table,
-	Alter_inplace_info* inplace_info   
-	){
+	Alter_inplace_info* inplace_info,
+    enum innodb_row_format_change   change_flag
+)
+{
 	//lock retyr times	
 	pars_info_t *	info;
 	ulint   		error_no = DB_SUCCESS;
@@ -1826,6 +1828,8 @@ innobase_alter_row_format_simple(
 	ut_ad((tmp_table->s->row_type == ROW_TYPE_COMPACT && dict_table_is_gcs(table))||
         (tmp_table->s->row_type == ROW_TYPE_GCS && !dict_table_is_gcs(table)));
 
+    ut_ad(change_flag != INNODB_ROW_FORMAT_CHANGE_NO);
+
 	//todo: check if the old table is Compact or not!
 
 #ifdef UNIV_SYNC_DEBUG
@@ -1837,11 +1841,12 @@ innobase_alter_row_format_simple(
     ut_ad(tmp_table->s->fields == table->n_cols - DATA_N_SYS_COLS);
 
     //set the row format flag
-    if(tmp_table->s->row_type == ROW_TYPE_GCS && !dict_table_is_gcs(table)){
+    if(change_flag == INNODB_ROW_FORMAT_COMACT_TO_GCS){
 	    //compact -> gcs
         pars_info_add_int4_literal(info,"n_col",tmp_table->s->fields | (1<<31)|(1<<30));
-    }else if(tmp_table->s->row_type == ROW_TYPE_COMPACT && dict_table_is_gcs(table)){
+    }else if(change_flag == INNODB_ROW_FORMAT_GCS_TO_COMPACT){
         //gcs -> compact
+        ut_a(!dict_table_is_gcs_after_alter_table(table));
         pars_info_add_int4_literal(info,"n_col",tmp_table->s->fields | (1<<31));
     }else{
         //should never come to here!
@@ -1902,12 +1907,12 @@ innobase_alter_row_format_simple(
 
     //todo: modify the memory for fast alter row format
 
-     if(tmp_table->s->row_type == ROW_TYPE_GCS && !dict_table_is_gcs(table)){
-         ut_ad(table->is_gcs == false);
-         table->is_gcs = true;
-     }else if(tmp_table->s->row_type == ROW_TYPE_COMPACT && dict_table_is_gcs(table)){
-         ut_ad(table->is_gcs == true);
-         table->is_gcs = false;
+     if(change_flag == INNODB_ROW_FORMAT_COMACT_TO_GCS){
+         ut_ad(!table->is_gcs);
+         table->is_gcs = TRUE;
+     }else if(change_flag == INNODB_ROW_FORMAT_GCS_TO_COMPACT){
+         ut_ad(table->is_gcs);
+         table->is_gcs = FALSE;
      }else{
          //never come to here!
          ut_ad(0);
@@ -2121,7 +2126,7 @@ ha_innobase::check_if_supported_inplace_alter(
 
 	/*
 	check for fast alter row_format:
-	if theree are alter row_format in the alter statement,
+	if there are alter row_format in the alter statement,
 	and the NEW/OLD row_format are in GCS or COMPACT,we can fast alter it,
 	or we cannot fast alter.
 	
@@ -2131,8 +2136,7 @@ ha_innobase::check_if_supported_inplace_alter(
 	if(inplace_info->handler_flags == Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG){
 
 	  if(create_info->used_fields ==HA_CREATE_USED_ROW_FORMAT 
-		&& this->is_support_fast_rowformat_change(create_info->row_type,tb_innodb_row_type)){
-		  //todo: check the dict if suport ,if the row format have been gcs,cannot change to compact
+		&& this->is_support_fast_rowformat_change(create_info->row_type, tb_innodb_row_type) != INNODB_ROW_FORMAT_CHANGE_NO){
 		  DBUG_RETURN(true);
 	  }		
 
@@ -2165,7 +2169,7 @@ ha_innobase::check_if_supported_inplace_alter(
 */
 
 UNIV_INTERN
-bool
+enum innodb_row_format_change
 ha_innobase::is_support_fast_rowformat_change(
  /*=============================*/
  enum row_type		  new_type,
@@ -2173,7 +2177,7 @@ ha_innobase::is_support_fast_rowformat_change(
 
      DBUG_ENTER("is_support_fast_rowformat_change");
      if(new_type == ROW_TYPE_GCS && old_type == ROW_TYPE_COMPACT)
-         DBUG_RETURN(true);
+         DBUG_RETURN(INNODB_ROW_FORMAT_COMACT_TO_GCS);
 
      if(new_type == ROW_TYPE_COMPACT && old_type == ROW_TYPE_GCS){
          /*
@@ -2187,10 +2191,12 @@ ha_innobase::is_support_fast_rowformat_change(
          ut_ad(dict_table_is_gcs(this->prebuilt->table));
 
          //check if the table have been fast altered
-         DBUG_RETURN(!dict_table_is_gcs_after_alter_table(this->prebuilt->table));
+         if (!dict_table_is_gcs_after_alter_table(this->prebuilt->table)) {
+            DBUG_RETURN(INNODB_ROW_FORMAT_GCS_TO_COMPACT);
+         }
      }
 
-     DBUG_RETURN(false);
+     DBUG_RETURN(INNODB_ROW_FORMAT_CHANGE_NO);
 }
 
 
@@ -2277,9 +2283,9 @@ ha_innobase::inplace_alter_table(
     }
 	else if(ha_alter_info->handler_flags == Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG)
 	{
-		//fast alter table row format!
-        ut_ad(is_support_fast_rowformat_change(tmp_table->s->row_type,table->s->row_type));
-        err = innobase_alter_row_format_simple(heap,trx,dict_table,tmp_table,ha_alter_info);
+		//fast alter table row format! 
+        err = innobase_alter_row_format_simple(heap,trx,dict_table,tmp_table,ha_alter_info,
+                is_support_fast_rowformat_change(tmp_table->s->row_type,table->s->row_type));
 		
 	}else{
         ut_ad(FALSE);

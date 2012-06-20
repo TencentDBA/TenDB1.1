@@ -88,6 +88,12 @@ check_trx_exists(
 	THD*	thd);	/*!< in: user thread handle */
 
 
+enum innodb_row_format_change {
+    INNODB_ROW_FORMAT_CHANGE_NO,
+    INNODB_ROW_FORMAT_GCS_TO_COMPACT,
+    INNODB_ROW_FORMAT_COMACT_TO_GCS
+};
+
 /** InnoDB B-tree index */
 struct dict_index_struct;
 /** Prebuilt structures in an Innobase table handle used within MySQL */
@@ -266,7 +272,7 @@ class ha_innobase: public handler
     );
 	
 	/* check if support fast row_format check*/
-	bool is_support_fast_rowformat_change(
+	enum innodb_row_format_change is_support_fast_rowformat_change(
 	  enum row_type new_type,
 	  enum row_type old_type
 	  );

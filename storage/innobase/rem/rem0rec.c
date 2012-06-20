@@ -321,9 +321,7 @@ rec_init_offsets_comp_ordinary(
     ulint       field_count_for_gcs = ULINT_UNDEFINED;      /* 初始化为最大值 */
     ulint       n_null_for_gcs = ULINT_UNDEFINED;
 
-    is_gcs = rec_is_gcs(rec);
-
-    if (extra > 0 && is_gcs)
+    if (extra > 0 && rec_is_gcs(rec))   /* 只有extra大于0才判断是否gcs记录，对于建索引等操作，是不需要记录头的 */
     {
         /*
             gcs记录
@@ -331,6 +329,7 @@ rec_init_offsets_comp_ordinary(
         ulint           field_count_len;
         ut_ad(dict_index_is_gcs_clust_after_alter_table(index));
         ut_ad(extra == REC_N_NEW_EXTRA_BYTES);
+
 
         field_count_for_gcs = rec_gcs_get_field_count(rec, &field_count_len);
 
