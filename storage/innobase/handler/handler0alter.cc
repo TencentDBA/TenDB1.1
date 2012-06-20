@@ -1791,28 +1791,132 @@ err_exit:
 
 
 /*
-
-check if the dict support fast alter row_format
+fast alter row_format 
+here we support two kinds of fast row-format alter:
+1.gcs->Compact(no fast alter be done before)
+2.Compact->GCS 
 
 return:
 false  success
 true   errno
 
-
 */
 ulint
 innobase_alter_row_format_simple(
-								 /*===================*/
-								 mem_heap_t*         heap,
-								 trx_t*			    trx,
-								 dict_table_t*       table,
-								 TABLE*              tmp_table,
-								 Alter_inplace_info* inplace_info
-								 ){
+	 /*===================*/
+	mem_heap_t*         heap,
+	trx_t*			    trx,
+	dict_table_t*       table,	
+	TABLE*              tmp_table,
+	Alter_inplace_info* inplace_info   
+	){
+	//lock retyr times	
+	pars_info_t *	info;
+	ulint   		error_no = DB_SUCCESS;
+	ulint			lock_retry = 0;
+	uint			ncols;    
+	//for modify the memory
+	ibool			locked = FALSE;
+
+    
 	DBUG_ENTER("innobase_alter_row_format_simple");
+	DBUG_ASSERT(trx_get_dict_operation(trx) == TRX_DICT_OP_INDEX);
+	ut_ad(trx->dict_operation_lock_mode == RW_X_LATCH);
+	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad((tmp_table->s->row_type == ROW_TYPE_COMPACT && dict_table_is_gcs(table))||
+        (tmp_table->s->row_type == ROW_TYPE_GCS && !dict_table_is_gcs(table)));
 
-	DBUG_RETURN(false);
+	//todo: check if the old table is Compact or not!
 
+#ifdef UNIV_SYNC_DEBUG
+	ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_EX));
+#endif /* UNIV_SYNC_DEBUG */
+
+	info = pars_info_create();
+
+    ut_ad(tmp_table->s->fields == table->n_cols - DATA_N_SYS_COLS);
+
+    //set the row format flag
+    if(tmp_table->s->row_type == ROW_TYPE_GCS && !dict_table_is_gcs(table)){
+	    //compact -> gcs
+        pars_info_add_int4_literal(info,"n_col",tmp_table->s->fields | (1<<31)|(1<<30));
+    }else if(tmp_table->s->row_type == ROW_TYPE_COMPACT && dict_table_is_gcs(table)){
+        //gcs -> compact
+        pars_info_add_int4_literal(info,"n_col",tmp_table->s->fields | (1<<31));
+    }else{
+        //should never come to here!
+        ut_ad(0);
+    }
+
+	pars_info_add_str_literal(info, "table_name", table->name);
+
+	//just for test
+	ncols = dict_table_get_n_cols(table);
+
+    error_no = que_eval_sql(
+        info,
+        "PROCEDURE UPDATE_SYS_TABLES_FAST_ALTER_ROWFOMAT () IS\n"
+        "BEGIN\n"
+        "UPDATE SYS_TABLES SET N_COLS = :n_col \n"
+        "WHERE NAME = :table_name;\n"
+        "END;\n",
+        FALSE, trx);	
+
+    if(error_no != DB_SUCCESS){
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+             "UPDATE_SYS_TABLES_FAST_ALTER_ROWFOMAT error %s %d table_name(%s)", __FILE__, __LINE__, table->name);
+        error_no = DB_ERROR;
+       
+        goto err_exit;
+    }
+
+    // to modify the memory
+    //get rw_x lock on select
+    while(lock_retry++ <10){
+        if(!rw_lock_x_lock_nowait(&btr_search_latch)){
+
+            /* Sleep for 10ms before trying again. */
+            os_thread_sleep(10000);
+            continue;
+        }
+
+        locked = TRUE;
+        break;
+    }
+
+    if (!locked)
+    {
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "rw_lock_x_lock_nowait(&btr_search_latch) failed %s %d", __FILE__, __LINE__);
+
+        error_no = DB_ERROR;
+
+        goto err_exit;
+    }
+
+    //todo: modify the memory for fast alter row format
+
+     if(tmp_table->s->row_type == ROW_TYPE_GCS && !dict_table_is_gcs(table)){
+         ut_ad(table->is_gcs == false);
+         table->is_gcs = true;
+     }else if(tmp_table->s->row_type == ROW_TYPE_COMPACT && dict_table_is_gcs(table)){
+         ut_ad(table->is_gcs == true);
+         table->is_gcs = false;
+     }else{
+         //never come to here!
+         ut_ad(0);
+     }
+    //unlock
+    rw_lock_x_unlock(&btr_search_latch);
+
+err_exit:
+	DBUG_RETURN(error_no);
 }
 
 /** Rename a column.
@@ -2067,21 +2171,26 @@ ha_innobase::is_support_fast_rowformat_change(
  enum row_type		  new_type,
  enum row_type		  old_type){
 
-   DBUG_ENTER("is_support_fast_rowformat_change");
-   if(new_type == ROW_TYPE_GCS && old_type == ROW_TYPE_COMPACT)
-	 DBUG_RETURN(true);
+     DBUG_ENTER("is_support_fast_rowformat_change");
+     if(new_type == ROW_TYPE_GCS && old_type == ROW_TYPE_COMPACT)
+         DBUG_RETURN(true);
 
-   if(new_type == ROW_TYPE_COMPACT && old_type == ROW_TYPE_GCS){
-	 /*
-	 here to check the dict if support change from gcs to compact
-	 if the table have been fast add column,the row_format have changed to 'real' GCS row_format,
-	 you cannot fast alter the table's row_format(check the total column in the dict).
-	 */
-	 //todo:
-	 //this->prebuilt->table
-   }
-  
-   DBUG_RETURN(false);
+     if(new_type == ROW_TYPE_COMPACT && old_type == ROW_TYPE_GCS){
+         /*
+         here to check the dict if support change from gcs to compact
+
+         if the table have been fast add column,the row_format have changed to 'real' GCS row_format,
+         you cannot fast alter the table's row_format(check the total column in the dict).
+         */
+
+         //the table should be gcs!    
+         ut_ad(dict_table_is_gcs(this->prebuilt->table));
+
+         //check if the table have been fast altered
+         DBUG_RETURN(!dict_table_is_gcs_after_alter_table(this->prebuilt->table));
+     }
+
+     DBUG_RETURN(false);
 }
 
 
@@ -2169,6 +2278,8 @@ ha_innobase::inplace_alter_table(
 	else if(ha_alter_info->handler_flags == Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG)
 	{
 		//fast alter table row format!
+        ut_ad(is_support_fast_rowformat_change(tmp_table->s->row_type,table->s->row_type));
+        err = innobase_alter_row_format_simple(heap,trx,dict_table,tmp_table,ha_alter_info);
 		
 	}else{
         ut_ad(FALSE);

@@ -771,7 +771,7 @@ dict_table_is_gcs(
 /*===============*/
 	const dict_table_t*	table);	/*!< in: table */
 /********************************************************************//**
-@return	TRUE if table is gcs table */
+@return	TRUE if table is gcs table and the table have been altered */
 UNIV_INLINE
 ibool
 dict_table_is_gcs_after_alter_table(

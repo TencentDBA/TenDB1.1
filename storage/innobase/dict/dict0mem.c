@@ -561,3 +561,8 @@ dict_mem_table_add_col_simple(
 }
 
 
+
+//if void is OK ? or ulint maybe better
+void dict_mem_table_alter_row_format_simple(){
+
+}
