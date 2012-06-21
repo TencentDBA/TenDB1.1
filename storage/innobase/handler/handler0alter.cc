@@ -1828,7 +1828,7 @@ innobase_alter_row_format_simple(
 	ut_ad((tmp_table->s->row_type == ROW_TYPE_COMPACT && dict_table_is_gcs(table))||
         (tmp_table->s->row_type == ROW_TYPE_GCS && !dict_table_is_gcs(table)));
 
-    ut_ad(change_flag != INNODB_ROW_FORMAT_CHANGE_NO);
+    ut_a(change_flag != INNODB_ROW_FORMAT_CHANGE_NO);
 
 	//todo: check if the old table is Compact or not!
 
@@ -1850,7 +1850,7 @@ innobase_alter_row_format_simple(
         pars_info_add_int4_literal(info,"n_col",tmp_table->s->fields | (1<<31));
     }else{
         //should never come to here!
-        ut_ad(0);
+        ut_a(0);
     }
 
 	pars_info_add_str_literal(info, "table_name", table->name);
@@ -1915,7 +1915,7 @@ innobase_alter_row_format_simple(
          table->is_gcs = FALSE;
      }else{
          //never come to here!
-         ut_ad(0);
+         ut_a(0);
      }
     //unlock
     rw_lock_x_unlock(&btr_search_latch);
@@ -2285,7 +2285,7 @@ ha_innobase::inplace_alter_table(
 	{
 		//fast alter table row format! 
         err = innobase_alter_row_format_simple(heap,trx,dict_table,tmp_table,ha_alter_info,
-                is_support_fast_rowformat_change(tmp_table->s->row_type,table->s->row_type));
+                is_support_fast_rowformat_change(tmp_table->s->row_type,get_row_type()));
 		
 	}else{
         ut_ad(FALSE);

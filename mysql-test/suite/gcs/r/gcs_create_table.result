@@ -1,0 +1,178 @@
+create database gcs_1 charset utf8;
+create database gcs_2 charset latin1;
+create database gcs_3 charset gbk;
+use gcs_1;
+create table gcs_tb_1(c1 int not null primary key auto_increment,
+c2 varchar(128) not null default 'aa',
+c3 char(24),
+c4 int not null default 1,
+c5 blob,
+c6 timestamp,
+key idx(c2,c3,c4)) engine=innodb row_format=gcs charset=utf8;
+show create table gcs_tb_1;
+Table	Create Table
+gcs_tb_1	CREATE TABLE `gcs_tb_1` (
+  `c1` int(11) NOT NULL AUTO_INCREMENT,
+  `c2` varchar(128) NOT NULL DEFAULT 'aa',
+  `c3` char(24) DEFAULT NULL,
+  `c4` int(11) NOT NULL DEFAULT '1',
+  `c5` blob,
+  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`c1`),
+  KEY `idx` (`c2`,`c3`,`c4`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=GCS
+create table gcs_tb_2(c1 int not null primary key auto_increment,
+c2 varchar(128) not null default 'aa',
+c3 char(24),
+c4 int not null default 1,
+c5 blob,
+c6 timestamp,
+key idx(c2,c3,c4)) engine=innodb row_format=compact charset=latin1;
+show create table gcs_tb_2;
+Table	Create Table
+gcs_tb_2	CREATE TABLE `gcs_tb_2` (
+  `c1` int(11) NOT NULL AUTO_INCREMENT,
+  `c2` varchar(128) NOT NULL DEFAULT 'aa',
+  `c3` char(24) DEFAULT NULL,
+  `c4` int(11) NOT NULL DEFAULT '1',
+  `c5` blob,
+  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`c1`),
+  KEY `idx` (`c2`,`c3`,`c4`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=COMPACT
+select @col_id:=7;
+@col_id:=7
+7
+select @a:=0;
+@a:=0
+0
+insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) select(select @a:=@a+1),c2,c3,c4,c5,c6 from gcs_tb_1;
+select @a:=0;
+@a:=0
+0
+insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) select(select @a:=@a+1),c2,c3,c4,c5,c6 from gcs_tb_2;
+select * from gcs_tb_1;
+c1	c2	c3	c4	c5	c6
+1	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+2	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+3	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+4	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+5	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+6	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+select * from gcs_tb_2;
+c1	c2	c3	c4	c5	c6
+1	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+2	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+3	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+4	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+5	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+6	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00
+alter table gcs_tb_1 add column (c7 int,
+c8 varchar(12),
+c9 blob,
+c10 int,
+c11 int,
+c12 int,
+c13 varchar(256),
+c14 blob);
+show create table gcs_tb_1;
+Table	Create Table
+gcs_tb_1	CREATE TABLE `gcs_tb_1` (
+  `c1` int(11) NOT NULL AUTO_INCREMENT,
+  `c2` varchar(128) NOT NULL DEFAULT 'aa',
+  `c3` char(24) DEFAULT NULL,
+  `c4` int(11) NOT NULL DEFAULT '1',
+  `c5` blob,
+  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `c7` int(11) DEFAULT NULL,
+  `c8` varchar(12) DEFAULT NULL,
+  `c9` blob,
+  `c10` int(11) DEFAULT NULL,
+  `c11` int(11) DEFAULT NULL,
+  `c12` int(11) DEFAULT NULL,
+  `c13` varchar(256) DEFAULT NULL,
+  `c14` blob,
+  PRIMARY KEY (`c1`),
+  KEY `idx` (`c2`,`c3`,`c4`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8 ROW_FORMAT=GCS
+alter table gcs_tb_2 add column (c7 int,
+c8 varchar(12),
+c9 blob,
+c10 int,
+c11 int,
+c12 int,
+c13 varchar(256),
+c14 blob);
+show create table gcs_tb_2;
+Table	Create Table
+gcs_tb_2	CREATE TABLE `gcs_tb_2` (
+  `c1` int(11) NOT NULL AUTO_INCREMENT,
+  `c2` varchar(128) NOT NULL DEFAULT 'aa',
+  `c3` char(24) DEFAULT NULL,
+  `c4` int(11) NOT NULL DEFAULT '1',
+  `c5` blob,
+  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `c7` int(11) DEFAULT NULL,
+  `c8` varchar(12) DEFAULT NULL,
+  `c9` blob,
+  `c10` int(11) DEFAULT NULL,
+  `c11` int(11) DEFAULT NULL,
+  `c12` int(11) DEFAULT NULL,
+  `c13` varchar(256) DEFAULT NULL,
+  `c14` blob,
+  PRIMARY KEY (`c1`),
+  KEY `idx` (`c2`,`c3`,`c4`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=latin1 ROW_FORMAT=COMPACT
+select @b:=@a;
+@b:=@a
+6
+insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) select(select @a:=@a+1),c2,c3,c4,c5,c6 from gcs_tb_1;
+insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values((select @a:=@a+1),"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'');
+Warnings:
+Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
+Warning	1265	Data truncated for column 'c6' at row 1
+insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) select(select @a:=@a+1),c2,c3,c4,c5,c6 from gcs_tb_2;
