@@ -123,7 +123,8 @@ static char *host= NULL, *opt_password= NULL, *user= NULL,
             *default_engine= NULL,
             *pre_system= NULL,
             *post_system= NULL,
-            *opt_mysql_unix_port= NULL;
+            *opt_mysql_unix_port= NULL,
+            *opt_row_format= NULL;
 static char *opt_plugin_dir= 0, *opt_default_auth= 0;
 
 const char *delimiter= "\n";
@@ -182,6 +183,21 @@ static const char *load_default_groups[]= { "mysqlslap","client",0 };
 
 typedef struct statement statement;
 
+enum build_table_type {
+    BUILD_TABLE_ALTER_ADD_INC,
+    BUILD_TABLE_ALTER_ADD_PRI,
+    BUILD_TABLE_ALTER_ADD_IDX,
+    BUILD_TABLE_ALTER_ADD_INT,
+    BUILD_TABLE_ALTER_ADD_VAR,
+    BUILD_DEFAULT,
+};
+
+/* save the build alter's last column type */
+static enum build_table_type build_type = BUILD_DEFAULT;
+static int last_column_id = 0;
+/* check if the table only one column */
+static my_bool only_one_column = FALSE;
+
 struct statement {
   char *string;
   size_t length;
@@ -189,6 +205,8 @@ struct statement {
   char *option;
   size_t option_length;
   statement *next;
+  char *alter_str;
+  size_t alter_length;
 };
 
 typedef struct option_string option_string;
@@ -296,8 +314,10 @@ int main(int argc, char **argv)
 {
   MYSQL mysql;
   option_string *eptr;
+  uint * current_tmp;
 
   MY_INIT(argv[0]);
+
 
   if (load_defaults("my",load_default_groups,&argc,&argv))
   {
@@ -404,9 +424,15 @@ int main(int argc, char **argv)
   if (!opt_only_print) 
     mysql_close(&mysql); /* Close & free connection */
 
+  /* added here to free something */
+  mysql_server_end();
+
   /* now free all the strings we created */
   my_free(opt_password);
+
   my_free(concurrency);
+  
+  
 
   statement_cleanup(create_statements);
   statement_cleanup(query_statements);
@@ -664,6 +690,9 @@ static struct my_option my_long_options[] =
   {"query", 'q', "Query to run or file containing query to run.",
     &user_supplied_query, &user_supplied_query,
     0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+    {"row_format",'r',"Set the row-format of created test tables (Compact,GCS,etc.)",
+    &opt_row_format,&opt_row_format,0,GET_STR,REQUIRED_ARG,
+    0,0,0,0,0,0},
 #ifdef HAVE_SMEM
   {"shared-memory-base-name", OPT_SHARED_MEMORY_BASE_NAME,
     "Base name of shared memory.", &shared_memory_base_name,
@@ -779,6 +808,18 @@ get_random_string(char *buf)
 
 
 /*
+    assigne build type to global variable build_type
+*/
+
+enum build_table_type get_build_type(enum build_table_type t_type){
+    if(build_type != BUILD_DEFAULT){
+        fprintf(stderr, "build_type have been assinged of value: %d ,new type is: %d\n",build_type,t_type);
+        exit(1);
+    }
+    return t_type;
+}
+
+/*
   build_table_string
 
   This function builds a create table query if the user opts to not supply
@@ -788,42 +829,80 @@ static statement *
 build_table_string(void)
 {
   char       buf[HUGE_STRING_LENGTH];
+  char       alter_buf[HUGE_STRING_LENGTH];
   unsigned int        col_count;
   statement *ptr;
   DYNAMIC_STRING table_string;
+  DYNAMIC_STRING alter_string;
+
+  /* a flag */
+  my_bool get_one_column_yet = FALSE;
+
+  
+
   DBUG_ENTER("build_table_string");
 
   DBUG_PRINT("info", ("num int cols %u num char cols %u",
                       num_int_cols, num_char_cols));
 
+  if( num_int_cols+num_char_cols+auto_generate_sql_autoincrement+
+      auto_generate_sql_guid_primary+auto_generate_sql_secondary_indexes ==1)
+  {
+      only_one_column = TRUE;
+  }
+
+  /* here wo judge the number of int&varchar column: they cannot be 0 at the same time ,update would be error*/
+  if(num_int_cols+num_char_cols <1)
+  {
+      fprintf(stderr, "[error]: num_int_cols and num_char_cols cannot be 0 the same time! \n");
+      exit(1);
+  }
   init_dynamic_string(&table_string, "", 1024, 1024);
+  init_dynamic_string(&alter_string, "", 1024, 1024);
 
   dynstr_append(&table_string, "CREATE TABLE `t1` (");
 
   if (auto_generate_sql_autoincrement)
   {
-    dynstr_append(&table_string, "id serial");
-
-    if (num_int_cols || num_char_cols)
-      dynstr_append(&table_string, ",");
+    if (only_one_column || num_int_cols || num_char_cols ||auto_generate_sql_guid_primary|| auto_generate_sql_secondary_indexes )
+    {
+        dynstr_append(&table_string, "id serial");
+        get_one_column_yet = TRUE;
+        /*  generate a commer before a column,so donnot add commer here!
+            dynstr_append(&table_string, ",");
+        */
+    }
+    else {                
+        build_type = get_build_type(BUILD_TABLE_ALTER_ADD_INC);
+    }
   }
 
   if (auto_generate_sql_guid_primary)
   {
-    dynstr_append(&table_string, "id varchar(32) primary key");
-
-    if (num_int_cols || num_char_cols || auto_generate_sql_guid_primary)
-      dynstr_append(&table_string, ",");
+    if (only_one_column || num_int_cols || num_char_cols || auto_generate_sql_secondary_indexes )
+    {
+        if(get_one_column_yet)
+            dynstr_append(&table_string, ",");
+        else
+            get_one_column_yet = TRUE;
+        dynstr_append(&table_string, "id varchar(32) primary key");
+        
+    }else{        
+        build_type = get_build_type(BUILD_TABLE_ALTER_ADD_PRI);
+    }
   }
 
   if (auto_generate_sql_secondary_indexes)
   {
     unsigned int count;
 
-    for (count= 0; count < auto_generate_sql_secondary_indexes; count++)
+    /* for gcs alter add later! here: auto_generate_sql_secondary_indexes-1 */
+    for (count= 0; count < auto_generate_sql_secondary_indexes-1; count++)
     {
-      if (count) /* Except for the first pass we add a comma */
+         /* Except for the first pass we add a comma,changed!*/
+     /* if (count)
         dynstr_append(&table_string, ",");
+        */
 
       if (snprintf(buf, HUGE_STRING_LENGTH, "id%d varchar(32) unique key", count) 
           > HUGE_STRING_LENGTH)
@@ -831,77 +910,218 @@ build_table_string(void)
         fprintf(stderr, "Memory Allocation error in create table\n");
         exit(1);
       }
+
+      if(get_one_column_yet)
+          dynstr_append(&table_string, ",");
+      else
+          get_one_column_yet = TRUE;
+
       dynstr_append(&table_string, buf);
     }
 
-    if (num_int_cols || num_char_cols)
-      dynstr_append(&table_string, ",");
+    if (only_one_column || num_int_cols || num_char_cols)
+    {
+        /* append the last id column */
+        /* Except for the first pass we add a comma */
+        /*if (count) 
+            dynstr_append(&table_string, ",");*/
+
+
+        if (snprintf(buf, HUGE_STRING_LENGTH, "id%d varchar(32) unique key", count) 
+          > HUGE_STRING_LENGTH)
+        {
+            fprintf(stderr, "Memory Allocation error in create table\n");
+            exit(1);
+        }
+
+        if(get_one_column_yet)
+            dynstr_append(&table_string, ",");
+        else
+            get_one_column_yet = TRUE;
+        dynstr_append(&table_string, buf);
+        
+        /* dynstr_append(&table_string, ","); */
+    }else{
+        build_type = get_build_type(BUILD_TABLE_ALTER_ADD_IDX);
+        last_column_id = count;
+    }
   }
 
-  if (num_int_cols)
-    for (col_count= 1; col_count <= num_int_cols; col_count++)
-    {
-      if (num_int_cols_index)
+  if (num_int_cols){
+      /* only num_int_cols-1 here! */
+      for (col_count= 1; col_count < num_int_cols; col_count++)
       {
-        if (snprintf(buf, HUGE_STRING_LENGTH, "intcol%d INT(32), INDEX(intcol%d)", 
-                     col_count, col_count) > HUGE_STRING_LENGTH)
-        {
-          fprintf(stderr, "Memory Allocation error in create table\n");
-          exit(1);
-        }
-      }
-      else
-      {
-        if (snprintf(buf, HUGE_STRING_LENGTH, "intcol%d INT(32) ", col_count) 
+          if (num_int_cols_index)
+          {
+              if (snprintf(buf, HUGE_STRING_LENGTH, "intcol%d INT(32), INDEX(intcol%d)", 
+                  col_count, col_count) > HUGE_STRING_LENGTH)
+              {
+                  fprintf(stderr, "Memory Allocation error in create table\n");
+                  exit(1);
+              }
+          }
+          else
+          {
+              if (snprintf(buf, HUGE_STRING_LENGTH, "intcol%d INT(32) ", col_count) 
             > HUGE_STRING_LENGTH)
-        {
-          fprintf(stderr, "Memory Allocation error in create table\n");
-          exit(1);
-        }
+              {
+                  fprintf(stderr, "Memory Allocation error in create table\n");
+                  exit(1);
+              }
+          }
+          if(get_one_column_yet)
+              dynstr_append(&table_string, ",");
+          else
+              get_one_column_yet = TRUE;
+          
+          dynstr_append(&table_string, buf);
+
+          /*
+          if (col_count < num_int_cols-1 || num_char_cols > 0)
+              dynstr_append(&table_string, ",");
+              */
       }
-      dynstr_append(&table_string, buf);
 
-      if (col_count < num_int_cols || num_char_cols > 0)
-        dynstr_append(&table_string, ",");
-    }
-
-  if (num_char_cols)
-    for (col_count= 1; col_count <= num_char_cols; col_count++)
-    {
-      if (num_char_cols_index)
+      /* the last column */
+      if(only_one_column || num_char_cols > 0)
       {
-        if (snprintf(buf, HUGE_STRING_LENGTH, 
-                     "charcol%d VARCHAR(128), INDEX(charcol%d) ", 
-                     col_count, col_count) > HUGE_STRING_LENGTH)
-        {
-          fprintf(stderr, "Memory Allocation error in creating table\n");
-          exit(1);
-        }
-      }
-      else
-      {
-        if (snprintf(buf, HUGE_STRING_LENGTH, "charcol%d VARCHAR(128)", 
-                     col_count) > HUGE_STRING_LENGTH)
-        {
-          fprintf(stderr, "Memory Allocation error in creating table\n");
-          exit(1);
-        }
-      }
-      dynstr_append(&table_string, buf);
+          if (num_int_cols_index)
+          {
+              if (snprintf(buf, HUGE_STRING_LENGTH, "intcol%d INT(32), INDEX(intcol%d)", 
+                  col_count, col_count) > HUGE_STRING_LENGTH)
+              {
+                  fprintf(stderr, "Memory Allocation error in create table\n");
+                  exit(1);
+              }
+          }
+          else
+          {
+              if (snprintf(buf, HUGE_STRING_LENGTH, "intcol%d INT(32) ", col_count) 
+            > HUGE_STRING_LENGTH)
+              {
+                  fprintf(stderr, "Memory Allocation error in create table\n");
+                  exit(1);
+              }
+          }
+          if(get_one_column_yet)
+              dynstr_append(&table_string, ",");
+          else
+              get_one_column_yet = TRUE;
 
-      if (col_count < num_char_cols)
-        dynstr_append(&table_string, ",");
-    }
+          dynstr_append(&table_string, buf);
+         
+      }else{
+          build_type = get_build_type(BUILD_TABLE_ALTER_ADD_INT);
+          last_column_id = col_count;
+      }
+  }
+
+  if (num_char_cols){
+      for (col_count= 1; col_count < num_char_cols || only_one_column; col_count++)
+      {
+          if (num_char_cols_index)
+          {
+              if (snprintf(buf, HUGE_STRING_LENGTH, 
+                  "charcol%d VARCHAR(128), INDEX(charcol%d) ", 
+                  col_count, col_count) > HUGE_STRING_LENGTH)
+              {
+                  fprintf(stderr, "Memory Allocation error in creating table\n");
+                  exit(1);
+              }
+          }
+          else
+          {
+              if (snprintf(buf, HUGE_STRING_LENGTH, "charcol%d VARCHAR(128)", 
+                  col_count) > HUGE_STRING_LENGTH)
+              {
+                  fprintf(stderr, "Memory Allocation error in creating table\n");
+                  exit(1);
+              }
+          }
+
+          if(get_one_column_yet)
+              dynstr_append(&table_string, ",");
+          else
+              get_one_column_yet = TRUE;
+    
+          dynstr_append(&table_string, buf);
+
+          /* the only column */
+          if(only_one_column)
+              break;
+      }
+      /* should be varchar! */
+      build_type = get_build_type(BUILD_TABLE_ALTER_ADD_VAR);
+      last_column_id = col_count;
+  }
 
   dynstr_append(&table_string, ")");
+
+  /* judge the row_format.*/
+  if(opt_row_format){
+      /*  we assume the opt_row_format would'not overflow! */
+      if(snprintf(buf,HUGE_STRING_LENGTH," row_format=%s ",opt_row_format)>HUGE_STRING_LENGTH){
+          fprintf(stderr, "Memory Allocation error in creating table\n");
+          exit(1);
+      }
+      dynstr_append(&table_string, buf);
+  }else{
+        /* make compact default ! */
+        dynstr_append(&table_string, " row_format=compact ");
+  }
+
+  DBUG_ASSERT(build_type != BUILD_DEFAULT || (build_type == BUILD_DEFAULT && only_one_column));
+
+  switch(build_type){
+      case BUILD_TABLE_ALTER_ADD_INC:
+          snprintf(buf,HUGE_STRING_LENGTH,"id serial");
+          break;
+      case BUILD_TABLE_ALTER_ADD_PRI:
+          snprintf(buf,HUGE_STRING_LENGTH,"id varchar(32) primary key");
+          break;
+      case BUILD_TABLE_ALTER_ADD_IDX:
+          snprintf(buf,HUGE_STRING_LENGTH,"id%d varchar(32) unique key",last_column_id);
+          break;
+      case BUILD_TABLE_ALTER_ADD_INT:
+          if(num_int_cols_index){
+              snprintf(buf,HUGE_STRING_LENGTH,"intcol%d INT(32), INDEX(intcol%d)",
+                  last_column_id,last_column_id);
+          }else{
+              snprintf(buf,HUGE_STRING_LENGTH,"intcol%d INT(32)",last_column_id);
+          }
+          break;
+      case BUILD_TABLE_ALTER_ADD_VAR:
+          if(num_char_cols_index){
+              snprintf(buf, HUGE_STRING_LENGTH, 
+                  "charcol%d VARCHAR(128), INDEX(charcol%d) ", 
+                  last_column_id, last_column_id);
+          }else{
+              snprintf(buf, HUGE_STRING_LENGTH, 
+                  "charcol%d VARCHAR(128) ", last_column_id);
+          }
+          break;
+      default:
+          /* there is only one column:(  */
+          DBUG_ASSERT(only_one_column);
+          break;
+  }
+  dynstr_append(&alter_string, "alter table t1 add column(");
+  dynstr_append(&alter_string, buf);
+  dynstr_append(&alter_string, ")");
+
   ptr= (statement *)my_malloc(sizeof(statement), 
                               MYF(MY_ZEROFILL|MY_FAE|MY_WME));
   ptr->string = (char *)my_malloc(table_string.length+1,
                                   MYF(MY_ZEROFILL|MY_FAE|MY_WME));
+  ptr->alter_str = (char *)my_malloc(alter_string.length+1,
+                                   MYF(MY_ZEROFILL|MY_FAE|MY_WME));    
   ptr->length= table_string.length+1;
+  ptr->alter_length = alter_string.length+1;
   ptr->type= CREATE_TABLE_TYPE;
   strmov(ptr->string, table_string.str);
+  strmov(ptr->alter_str, alter_string.str);
   dynstr_free(&table_string);
+  dynstr_free(&alter_string);
   DBUG_RETURN(ptr);
 }
 
@@ -1258,6 +1478,7 @@ get_options(int *argc,char ***argv)
     if (verbose >= 2)
       printf("Building Create Statements for Auto\n");
 
+    /* here we just build the table without the last column! */
     create_statements= build_table_string();
     /* 
       Pre-populate table 
@@ -1656,6 +1877,12 @@ limit_not_met:
                 my_progname, (uint)ptr->length, ptr->string, mysql_error(mysql));
         exit(1);
       }
+    }
+    /* no matter how,we run the alter option to finished create table */
+    if(!only_one_column && ptr->alter_str && run_query(mysql,ptr->alter_str,ptr->alter_length)){
+        fprintf(stderr,"%s: Cannot run alter query %.*s ERROR : %s\n",
+            my_progname, (uint)ptr->alter_length, ptr->alter_str, mysql_error(mysql));
+        exit(1);
     }
   }
 
@@ -2187,8 +2414,10 @@ statement_cleanup(statement *stmt)
   {
     nptr= ptr->next;
     my_free(ptr->string);
+    my_free(ptr->alter_str);
+    my_free(ptr->option);
     my_free(ptr);
-  }
+   }
 }
 
 
