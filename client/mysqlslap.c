@@ -314,7 +314,6 @@ int main(int argc, char **argv)
 {
   MYSQL mysql;
   option_string *eptr;
-  uint * current_tmp;
 
   MY_INIT(argv[0]);
 
@@ -829,7 +828,6 @@ static statement *
 build_table_string(void)
 {
   char       buf[HUGE_STRING_LENGTH];
-  char       alter_buf[HUGE_STRING_LENGTH];
   unsigned int        col_count;
   statement *ptr;
   DYNAMIC_STRING table_string;
@@ -860,7 +858,7 @@ build_table_string(void)
   init_dynamic_string(&table_string, "", 1024, 1024);
   init_dynamic_string(&alter_string, "", 1024, 1024);
 
-  dynstr_append(&table_string, "CREATE TABLE `t1` (");
+  dynstr_append(&table_string, "CREATE TABLE IF NOT EXISTS `t1` (");
 
   if (auto_generate_sql_autoincrement)
   {
@@ -1729,9 +1727,9 @@ generate_primary_key_list(MYSQL *mysql, option_string *engine_stmt)
 
   /* 
     Blackhole is a special case, this allows us to test the upper end 
-    of the server during load runs.
+    of the server during load runs. here should not be a opt_only_print judge! get rid of it
   */
-  if (opt_only_print || (engine_stmt && 
+  if ( (engine_stmt && 
                          strstr(engine_stmt->string, "blackhole")))
   {
     primary_keys_number_of= 1;
@@ -1806,7 +1804,7 @@ create_schema(MYSQL *mysql, const char *db, statement *stmt,
   ulonglong count;
   DBUG_ENTER("create_schema");
 
-  len= snprintf(query, HUGE_STRING_LENGTH, "CREATE SCHEMA `%s`", db);
+  len= snprintf(query, HUGE_STRING_LENGTH, "CREATE SCHEMA IF NOT EXISTS `%s`", db);
 
   if (verbose >= 2)
     printf("Loading Pre-data\n");
