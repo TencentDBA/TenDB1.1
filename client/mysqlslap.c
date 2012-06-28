@@ -131,7 +131,7 @@ const char *delimiter= "\n";
 
 const char *create_schema_string= "mysqlslap";
 
-static my_bool opt_preserve= TRUE, opt_no_drop= FALSE;
+static my_bool opt_preserve= TRUE, opt_no_drop= FALSE,opt_no_create=FALSE;
 static my_bool debug_info_flag= 0, debug_check_flag= 0;
 static my_bool opt_only_print= FALSE;
 static my_bool opt_compress= FALSE, tty_password= FALSE,
@@ -635,6 +635,8 @@ static struct my_option my_long_options[] =
     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"iterations", 'i', "Number of times to run the tests.", &iterations,
     &iterations, 0, GET_UINT, REQUIRED_ARG, 1, 0, 0, 0, 0, 0},
+  {"no-create", 'n', "Do not create the schema/table before the test.",
+  &opt_no_create, &opt_no_create, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"no-drop", OPT_SLAP_NO_DROP, "Do not drop the schema after the test.",
    &opt_no_drop, &opt_no_drop, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"number-char-cols", 'x', 
@@ -689,7 +691,7 @@ static struct my_option my_long_options[] =
   {"query", 'q', "Query to run or file containing query to run.",
     &user_supplied_query, &user_supplied_query,
     0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-    {"row_format",'r',"Set the row-format of created test tables (Compact,GCS,etc.)",
+    {"row_format",'r',"Row-format of test tables to create (Compact,GCS,etc.)",
     &opt_row_format,&opt_row_format,0,GET_STR,REQUIRED_ARG,
     0,0,0,0,0,0},
 #ifdef HAVE_SMEM
@@ -1729,7 +1731,7 @@ generate_primary_key_list(MYSQL *mysql, option_string *engine_stmt)
     Blackhole is a special case, this allows us to test the upper end 
     of the server during load runs. here should not be a opt_only_print judge! get rid of it
   */
-  if ( (engine_stmt && 
+  if (opt_only_print ||(engine_stmt && 
                          strstr(engine_stmt->string, "blackhole")))
   {
     primary_keys_number_of= 1;
@@ -1809,11 +1811,13 @@ create_schema(MYSQL *mysql, const char *db, statement *stmt,
   if (verbose >= 2)
     printf("Loading Pre-data\n");
 
-  if (run_query(mysql, query, len))
-  {
-    fprintf(stderr,"%s: Cannot create schema %s : %s\n", my_progname, db,
-            mysql_error(mysql));
-    exit(1);
+  if(!opt_no_create){
+      if (run_query(mysql, query, len))
+      {
+          fprintf(stderr,"%s: Cannot create schema %s : %s\n", my_progname, db,
+              mysql_error(mysql));
+          exit(1);
+      }
   }
 
   if (opt_only_print)
@@ -1877,7 +1881,7 @@ limit_not_met:
       }
     }
     /* no matter how,we run the alter option to finished create table */
-    if(!only_one_column && ptr->alter_str && run_query(mysql,ptr->alter_str,ptr->alter_length)){
+    if(!only_one_column && !opt_no_create && ptr->alter_str && run_query(mysql,ptr->alter_str,ptr->alter_length)){
         fprintf(stderr,"%s: Cannot run alter query %.*s ERROR : %s\n",
             my_progname, (uint)ptr->alter_length, ptr->alter_str, mysql_error(mysql));
         exit(1);
