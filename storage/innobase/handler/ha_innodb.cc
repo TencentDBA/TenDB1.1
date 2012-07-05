@@ -3159,7 +3159,26 @@ ha_innobase::get_row_type() const
 	return(ROW_TYPE_NOT_USED);
 }
 
+UNIV_INTERN
+const char*
+ha_innobase::get_row_type_str_for_gcs() const
+/*=============================*/
+{
+    if (prebuilt && prebuilt->table) {
+        const ulint	flags = prebuilt->table->flags;
 
+		ut_ad(dict_table_is_gcs(prebuilt->table));
+        /* check if GCS type*/      
+        if(dict_table_is_gcs_after_alter_table(prebuilt->table)){
+            return "GCS";
+        }
+        else {
+            return "Gcs";
+        }
+    }
+    ut_ad(0);
+    return("Gcs");
+}
 
 /****************************************************************//**
 Get the table flags to use for the statement.
