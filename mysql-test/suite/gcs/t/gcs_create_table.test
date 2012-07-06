@@ -1,43 +1,27 @@
+
 create database gcs_1 charset utf8;
 use gcs_1;
+
+#test create gcs table
 create table gcs_tb_1(c1 int not null primary key auto_increment,
-c2 varchar(128) not null default 'aa',
-c3 char(24),
-c4 int not null default 1,
-c5 blob,
-c6 timestamp,
-key idx(c2,c3,c4)) engine=innodb row_format=gcs charset=utf8;
+    c2 varchar(128) not null default 'aa',
+    c3 char(24),
+    c4 int not null default 1,
+    c5 blob,
+    c6 timestamp,
+    key idx(c2,c3,c4)) engine=innodb row_format=gcs charset=utf8;
 show create table gcs_tb_1;
-Table	Create Table
-gcs_tb_1	CREATE TABLE `gcs_tb_1` (
-  `c1` int(11) NOT NULL AUTO_INCREMENT,
-  `c2` varchar(128) NOT NULL DEFAULT 'aa',
-  `c3` char(24) DEFAULT NULL,
-  `c4` int(11) NOT NULL DEFAULT '1',
-  `c5` blob,
-  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`c1`),
-  KEY `idx` (`c2`,`c3`,`c4`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=GCS
+
+#test mormal table
 create table gcs_tb_2(c1 int not null primary key auto_increment,
-c2 varchar(128) not null default 'aa',
-c3 char(24),
-c4 int not null default 1,
-c5 blob,
-c6 timestamp,
-key idx(c2,c3,c4)) engine=innodb row_format=compact charset=latin1;
+    c2 varchar(128) not null default 'aa',
+    c3 char(24),
+    c4 int not null default 1,
+    c5 blob,
+    c6 timestamp,
+    key idx(c2,c3,c4)) engine=innodb row_format=compact charset=latin1;
+
 show create table gcs_tb_2;
-Table	Create Table
-gcs_tb_2	CREATE TABLE `gcs_tb_2` (
-  `c1` int(11) NOT NULL AUTO_INCREMENT,
-  `c2` varchar(128) NOT NULL DEFAULT 'aa',
-  `c3` char(24) DEFAULT NULL,
-  `c4` int(11) NOT NULL DEFAULT '1',
-  `c5` blob,
-  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`c1`),
-  KEY `idx` (`c2`,`c3`,`c4`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 ROW_FORMAT=COMPACT
 create table gcs_many_column(
 c_1 int,
 c_2 int,
@@ -166,6 +150,8 @@ c_124 int,
 c_125 int,
 c_126 int,
 c_127 int) row_format=gcs engine=innodb;
+
+
 create table compact_many_column_normal(
 c_1 int,
 c_2 int,
@@ -294,11 +280,13 @@ c_124 int,
 c_125 int,
 c_126 int,
 c_127 int) row_format=compact engine=innodb;
+
 alter table gcs_many_column add column( c_128 int,c_129 int,c_130 int);
+
 alter table compact_many_column_normal add column( c_128 int,c_129 int,c_130 int);
+
+#for many column of gcs
 select @a:=1;
-@a:=1
-1
 insert into gcs_many_column set c_130=@a;
 insert into gcs_many_column set c_130=(select @a:=@a+1);
 insert into gcs_many_column(c_130) select @a:=@a+1 from gcs_many_column;
@@ -315,9 +303,8 @@ insert into gcs_many_column(c_130) select @a:=@a+1 from gcs_many_column;
 insert into gcs_many_column(c_130) select @a:=@a+1 from gcs_many_column;
 insert into gcs_many_column(c_130) select @a:=@a+1 from gcs_many_column;
 insert into gcs_many_column(c_130) select @a:=@a+1 from gcs_many_column;
+
 select count(c_130),count(c_1) from gcs_many_column ;
-count(c_130)	count(c_1)
-32768	0
 alter table gcs_many_column drop column c_1;
 alter table gcs_many_column drop column c_2;
 alter table gcs_many_column drop column c_3;
@@ -325,20 +312,15 @@ alter table gcs_many_column drop column c_4;
 alter table gcs_many_column drop column c_5;
 alter table gcs_many_column drop column c_6;
 select count(c_130),count(c_127) from gcs_many_column ;
-count(c_130)	count(c_127)
-32768	0
 select count(c_130) from gcs_many_column ;
-count(c_130)
-32768
 update gcs_many_column set c_130 = c_130+1 ;
 alter table gcs_many_column add column(c_1 int,c_2 int,c_3 int,c_4 int,c_5 int,c_6 int);
 update gcs_many_column set c_1 = c_130 ;
 select count(c_130),count(c_1) from gcs_many_column ;
-count(c_130)	count(c_1)
-32768	32768
+
+#for many column of compact
+
 select @a:=1;
-@a:=1
-1
 insert into compact_many_column_normal set c_130=@a;
 insert into compact_many_column_normal set c_130=(select @a:=@a+1);
 insert into compact_many_column_normal(c_130) select @a:=@a+1 from compact_many_column_normal;
@@ -355,9 +337,8 @@ insert into compact_many_column_normal(c_130) select @a:=@a+1 from compact_many_
 insert into compact_many_column_normal(c_130) select @a:=@a+1 from compact_many_column_normal;
 insert into compact_many_column_normal(c_130) select @a:=@a+1 from compact_many_column_normal;
 insert into compact_many_column_normal(c_130) select @a:=@a+1 from compact_many_column_normal;
+
 select count(c_130),count(c_1) from compact_many_column_normal ;
-count(c_130)	count(c_1)
-32768	0
 alter table compact_many_column_normal drop column c_1;
 alter table compact_many_column_normal drop column c_2;
 alter table compact_many_column_normal drop column c_3;
@@ -365,26 +346,23 @@ alter table compact_many_column_normal drop column c_4;
 alter table compact_many_column_normal drop column c_5;
 alter table compact_many_column_normal drop column c_6;
 select count(c_130),count(c_127) from compact_many_column_normal ;
-count(c_130)	count(c_127)
-32768	0
 select count(c_130) from compact_many_column_normal ;
-count(c_130)
-32768
 update compact_many_column_normal set c_130 = c_130+1 ;
 alter table compact_many_column_normal add column(c_1 int,c_2 int,c_3 int,c_4 int,c_5 int,c_6 int);
 update compact_many_column_normal set c_1 = c_130 ;
 select count(c_130),count(c_1) from compact_many_column_normal ;
-count(c_130)	count(c_1)
-32768	32768
+
+#end
+
 select @a:=0;
-@a:=0
-0
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values(@a:=@a+1 ,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now());
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now());
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),NULL,@a,"IM BLOB",now());
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now());
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now());
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now());
+
+
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now() from gcs_tb_1;
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now() from gcs_tb_1;
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now() from gcs_tb_1;
@@ -397,15 +375,18 @@ insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAA
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now() from gcs_tb_1;
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now() from gcs_tb_1;
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now() from gcs_tb_1;
+
+
+
 select @a:=0;
-@a:=0
-0
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now());
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now());
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now());
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now());
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now());
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) values( @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now());
+
+
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now() from gcs_tb_2;
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now() from gcs_tb_2;
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now() from gcs_tb_2;
@@ -418,36 +399,26 @@ insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR BBBB
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now() from gcs_tb_2;
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now() from gcs_tb_2;
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6) select @a:=@a+1,concat(@a,"VARCHAR BBBBBBB"),concat(@a,"CHAR ccccccc"),@a,"IM BLOB",now() from gcs_tb_2;
+
+    
 select count(c1),count(c2),count(c3),count(c4),count(c5),count(c6) from gcs_tb_1;
-count(c1)	count(c2)	count(c3)	count(c4)	count(c5)	count(c6)
-24576	24576	24479	24576	24192	24576
 select count(c1),count(c2),count(c3),count(c4),count(c5),count(c6) from gcs_tb_2;
-count(c1)	count(c2)	count(c3)	count(c4)	count(c5)	count(c6)
-24576	24576	24480	24576	23808	24576
+
 alter table gcs_tb_1 row_format=compact;
 show table status like 'gcs_tb_1';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_1	InnoDB	10	Compact	24550	107	2637824	0	3686400	7340032	24577	2012-07-03 12:44:52	NULL	NULL	utf8_general_ci	NULL	row_format=COMPACT	
 alter table gcs_tb_1 row_format=gcs;
 show table status like 'gcs_tb_1';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_1	InnoDB	10	Gcs	24992	105	2637824	0	3686400	7340032	24577	2012-07-03 12:44:52	NULL	NULL	utf8_general_ci	NULL	row_format=GCS	
 alter table gcs_tb_1 row_format=compact;
 show table status like 'gcs_tb_1';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_1	InnoDB	10	Compact	24635	107	2637824	0	3686400	7340032	24577	2012-07-03 12:44:52	NULL	NULL	utf8_general_ci	NULL	row_format=COMPACT	
 alter table gcs_tb_1 row_format=gcs;
 show table status like 'gcs_tb_1';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_1	InnoDB	10	Gcs	24448	107	2637824	0	3686400	7340032	24577	2012-07-03 12:44:52	NULL	NULL	utf8_general_ci	NULL	row_format=GCS	
 alter table gcs_tb_1 row_format=compact;
 show table status like 'gcs_tb_1';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_1	InnoDB	10	Compact	24329	108	2637824	0	3686400	7340032	24577	2012-07-03 12:44:52	NULL	NULL	utf8_general_ci	NULL	row_format=COMPACT	
 alter table gcs_tb_1 row_format=gcs;
 show table status like 'gcs_tb_1';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_1	InnoDB	10	Gcs	24380	108	2637824	0	3686400	7340032	24577	2012-07-03 12:44:52	NULL	NULL	utf8_general_ci	NULL	row_format=GCS	
+
+
+##test add column
 alter table gcs_tb_1 add column (c7 int,
 c8 varchar(12),
 c9 blob,
@@ -456,32 +427,11 @@ c11 int,
 c12 int,
 c13 varchar(256),
 c14 blob);
+
 alter table gcs_tb_1 add key my_added_key(c8),add key my_added_key2(c10,c11,c12,c13);
-Warnings:
-Warning	1071	Specified key was too long; max key length is 767 bytes
-Warning	1071	Specified key was too long; max key length is 767 bytes
+
 show create table gcs_tb_1;
-Table	Create Table
-gcs_tb_1	CREATE TABLE `gcs_tb_1` (
-  `c1` int(11) NOT NULL AUTO_INCREMENT,
-  `c2` varchar(128) NOT NULL DEFAULT 'aa',
-  `c3` char(24) DEFAULT NULL,
-  `c4` int(11) NOT NULL DEFAULT '1',
-  `c5` blob,
-  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `c7` int(11) DEFAULT NULL,
-  `c8` varchar(12) DEFAULT NULL,
-  `c9` blob,
-  `c10` int(11) DEFAULT NULL,
-  `c11` int(11) DEFAULT NULL,
-  `c12` int(11) DEFAULT NULL,
-  `c13` varchar(256) DEFAULT NULL,
-  `c14` blob,
-  PRIMARY KEY (`c1`),
-  KEY `idx` (`c2`,`c3`,`c4`),
-  KEY `my_added_key` (`c8`),
-  KEY `my_added_key2` (`c10`,`c11`,`c12`,`c13`(255))
-) ENGINE=InnoDB AUTO_INCREMENT=24577 DEFAULT CHARSET=utf8 ROW_FORMAT=GCS
+
 alter table gcs_tb_2 add column (c7 int,
 c8 varchar(12),
 c9 blob,
@@ -490,59 +440,29 @@ c11 int,
 c12 int,
 c13 varchar(256),
 c14 blob);
+
 alter table gcs_tb_2 add key my_added_key(c8),add key my_added_key2(c10,c11,c12,c13);
+
 show create table gcs_tb_2;
-Table	Create Table
-gcs_tb_2	CREATE TABLE `gcs_tb_2` (
-  `c1` int(11) NOT NULL AUTO_INCREMENT,
-  `c2` varchar(128) NOT NULL DEFAULT 'aa',
-  `c3` char(24) DEFAULT NULL,
-  `c4` int(11) NOT NULL DEFAULT '1',
-  `c5` blob,
-  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `c7` int(11) DEFAULT NULL,
-  `c8` varchar(12) DEFAULT NULL,
-  `c9` blob,
-  `c10` int(11) DEFAULT NULL,
-  `c11` int(11) DEFAULT NULL,
-  `c12` int(11) DEFAULT NULL,
-  `c13` varchar(256) DEFAULT NULL,
-  `c14` blob,
-  PRIMARY KEY (`c1`),
-  KEY `idx` (`c2`,`c3`,`c4`),
-  KEY `my_added_key` (`c8`),
-  KEY `my_added_key2` (`c10`,`c11`,`c12`,`c13`)
-) ENGINE=InnoDB AUTO_INCREMENT=24577 DEFAULT CHARSET=latin1 ROW_FORMAT=COMPACT
+
+##test insert after alter
 insert into gcs_tb_1 (c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14) values( @a:=@a+1,"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'',
-@a+1,"add varchar","im another blob",@a+10,@a+11,@a+12,concat(@a,"varchar added"),"BLOBL SECOND");
-Warnings:
-Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
-Warning	1265	Data truncated for column 'c6' at row 1
+    @a+1,"add varchar","im another blob",@a+10,@a+11,@a+12,concat(@a,"varchar added"),"BLOBL SECOND");
 select * from gcs_tb_1 where c1=@a;
-c1	c2	c3	c4	c5	c6	c7	c8	c9	c10	c11	c12	c13	c14
-24577	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00	24578	add varchar	im another blob	24587	24588	24589	24577varchar added	BLOBL SECOND
 insert into gcs_tb_2 (c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14) values( @a:=@a+1,"VARCHAR AAAAAA","CHAR bbbbbb",'',"IM BLOB>>",'',
-@a+1,"add varchar","im another blob",@a+10,@a+11,@a+12,concat(@a,"varchar added"),"BLOBL SECOND");
-Warnings:
-Warning	1366	Incorrect integer value: '' for column 'c4' at row 1
-Warning	1265	Data truncated for column 'c6' at row 1
+    @a+1,"add varchar","im another blob",@a+10,@a+11,@a+12,concat(@a,"varchar added"),"BLOBL SECOND");
 select * from gcs_tb_2 where c1=@a;
-c1	c2	c3	c4	c5	c6	c7	c8	c9	c10	c11	c12	c13	c14
-24578	VARCHAR AAAAAA	CHAR bbbbbb	0	IM BLOB>>	0000-00-00 00:00:00	24579	add varchar	im another blob	24588	24589	24590	24578varchar added	BLOBL SECOND
+
+##test update after alter
 update gcs_tb_1 set c13=c3 where @a<10;
 update gcs_tb_2 set c13=c3 where @a<10;
+
+##
 select count(*) from gcs_tb_1;
-count(*)
-24577
 select count(*) from gcs_tb_1 where c14 <=> null;
-count(*)
-24576
 select count(*) from gcs_tb_2;
-count(*)
-24577
 select count(*) from gcs_tb_2 where c14 <=> null;
-count(*)
-24576
+
 alter table gcs_tb_1  add key added_key1(c13(64));
 update gcs_tb_1 set c13=concat('aa',c13) where @a<10;
 alter table gcs_tb_1 drop key added_key1;
@@ -553,6 +473,7 @@ alter table gcs_tb_1 drop key added_key1;
 update gcs_tb_1 set c13=concat('aa',c13) where @a<10;
 alter table gcs_tb_1  add key added_key1(c13(64));
 update gcs_tb_1 set c13=concat('aa',c13) where @a<10;
+
 alter table gcs_tb_2  add key added_key1(c13(64));
 update gcs_tb_2 set c13=concat('aa',c13) where @a<10;
 alter table gcs_tb_2 drop key added_key1;
@@ -563,138 +484,73 @@ alter table gcs_tb_2 drop key added_key1;
 update gcs_tb_2 set c13=concat('aa',c13) where @a<10;
 alter table gcs_tb_2  add key added_key1(c13(64));
 update gcs_tb_2 set c13=concat('aa',c13) where @a<10;
+
+
+
+
+##可空字段数/字段总数量
 create table gcs_tb_3(c1 int not null ,
-c2 varchar(128) not null,
-c3 char(24) not null,
-c4 int not null default 1,
-c5 int not null,
-c6 timestamp not  null,
-c7 varchar(128) not null,
-c8 int not null,
-c9 int,
-c10 int,
-c11 int,
-c12 int,
-c13 int,
-c14 int,
-c15 int,
-c16 int
+    c2 varchar(128) not null,
+    c3 char(24) not null,
+    c4 int not null default 1,
+    c5 int not null,
+    c6 timestamp not  null,
+    c7 varchar(128) not null,
+    c8 int not null,
+    c9 int,
+    c10 int,
+    c11 int,
+    c12 int,
+    c13 int,
+    c14 int,
+    c15 int,
+    c16 int
 ) engine=innodb row_format=gcs charset=utf8;
+
 insert into gcs_tb_3 (c1,c2,c3,c4,c7,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now() from gcs_tb_1;
-Warnings:
-Warning	1364	Field 'c5' doesn't have a default value
-Warning	1364	Field 'c8' doesn't have a default value
+
 select * from gcs_tb_3 order by c1 desc limit 1;
-c1	c2	c3	c4	c5	c6	c7	c8	c9	c10	c11	c12	c13	c14	c15	c16
-49155	49155VARCHAR AAAAAA	49155CHAR bbbbbb	49155	0	2012-07-03 07:57:56	IM BLOB	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+
 alter table gcs_tb_3 add column c17 int,add column c18 varchar(128);
+
 select * from gcs_tb_3 order by c1 desc limit 1;
-c1	c2	c3	c4	c5	c6	c7	c8	c9	c10	c11	c12	c13	c14	c15	c16	c17	c18
-49155	49155VARCHAR AAAAAA	49155CHAR bbbbbb	49155	0	2012-07-03 07:57:56	IM BLOB	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL
+
 alter table gcs_tb_3 add unique index idx(c18);
+
+#insert into gcs_tb_3(c1,c2,c3,c17,c18,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now() from gcs_tb_1;
+
 update  gcs_tb_3 set c18 = c2;
+
 select * from gcs_tb_3 order by c1 desc limit 1;
-c1	c2	c3	c4	c5	c6	c7	c8	c9	c10	c11	c12	c13	c14	c15	c16	c17	c18
-49155	49155VARCHAR AAAAAA	49155CHAR bbbbbb	49155	0	2012-07-03 07:58:01	IM BLOB	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	49155VARCHAR AAAAAA
+
+#insert into gcs_tb_3(c1,c2,c3,c4,c18,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now() from gcs_tb_1;
+
 select * from gcs_tb_3 order by c1 desc limit 1;
-c1	c2	c3	c4	c5	c6	c7	c8	c9	c10	c11	c12	c13	c14	c15	c16	c17	c18
-49155	49155VARCHAR AAAAAA	49155CHAR bbbbbb	49155	0	2012-07-03 07:58:01	IM BLOB	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	49155VARCHAR AAAAAA
+
 alter table gcs_tb_3 add column c20 timestamp;
+
 alter table gcs_tb_3 add column c21 datetime;
+
 show table status like 'gcs_tb_3';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_3	InnoDB	10	Gcs	24726	149	3686400	0	1589248	13631488	NULL	2012-07-03 12:57:56	NULL	NULL	utf8_general_ci	NULL	row_format=GCS	
 show create table gcs_tb_3;
-Table	Create Table
-gcs_tb_3	CREATE TABLE `gcs_tb_3` (
-  `c1` int(11) NOT NULL,
-  `c2` varchar(128) NOT NULL,
-  `c3` char(24) NOT NULL,
-  `c4` int(11) NOT NULL DEFAULT '1',
-  `c5` int(11) NOT NULL,
-  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `c7` varchar(128) NOT NULL,
-  `c8` int(11) NOT NULL,
-  `c9` int(11) DEFAULT NULL,
-  `c10` int(11) DEFAULT NULL,
-  `c11` int(11) DEFAULT NULL,
-  `c12` int(11) DEFAULT NULL,
-  `c13` int(11) DEFAULT NULL,
-  `c14` int(11) DEFAULT NULL,
-  `c15` int(11) DEFAULT NULL,
-  `c16` int(11) DEFAULT NULL,
-  `c17` int(11) DEFAULT NULL,
-  `c18` varchar(128) DEFAULT NULL,
-  `c20` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
-  `c21` datetime DEFAULT NULL,
-  UNIQUE KEY `idx` (`c18`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=GCS
+
 create table gcs_tb_4 like gcs_tb_3;
+
 show table status like'gcs_tb_4';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_4	InnoDB	10	Gcs	0	0	16384	0	16384	13631488	NULL	2012-07-03 12:58:22	NULL	NULL	utf8_general_ci	NULL	row_format=GCS	
 show create table gcs_tb_4;
-Table	Create Table
-gcs_tb_4	CREATE TABLE `gcs_tb_4` (
-  `c1` int(11) NOT NULL,
-  `c2` varchar(128) NOT NULL,
-  `c3` char(24) NOT NULL,
-  `c4` int(11) NOT NULL DEFAULT '1',
-  `c5` int(11) NOT NULL,
-  `c6` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `c7` varchar(128) NOT NULL,
-  `c8` int(11) NOT NULL,
-  `c9` int(11) DEFAULT NULL,
-  `c10` int(11) DEFAULT NULL,
-  `c11` int(11) DEFAULT NULL,
-  `c12` int(11) DEFAULT NULL,
-  `c13` int(11) DEFAULT NULL,
-  `c14` int(11) DEFAULT NULL,
-  `c15` int(11) DEFAULT NULL,
-  `c16` int(11) DEFAULT NULL,
-  `c17` int(11) DEFAULT NULL,
-  `c18` varchar(128) DEFAULT NULL,
-  `c20` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
-  `c21` datetime DEFAULT NULL,
-  UNIQUE KEY `idx` (`c18`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 ROW_FORMAT=GCS
+
 create table gcs_tb_5 as select * from gcs_tb_4;
+
 show table status like'gcs_tb_5';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_5	MyISAM	10	Dynamic	0	0	0	281474976710655	1024	0	NULL	2012-07-03 07:58:22	2012-07-03 12:58:22	NULL	utf8_general_ci	NULL		
 show create table gcs_tb_5;
-Table	Create Table
-gcs_tb_5	CREATE TABLE `gcs_tb_5` (
-  `c1` int(11) NOT NULL,
-  `c2` varchar(128) NOT NULL,
-  `c3` char(24) NOT NULL,
-  `c4` int(11) NOT NULL DEFAULT '1',
-  `c5` int(11) NOT NULL,
-  `c6` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
-  `c7` varchar(128) NOT NULL,
-  `c8` int(11) NOT NULL,
-  `c9` int(11) DEFAULT NULL,
-  `c10` int(11) DEFAULT NULL,
-  `c11` int(11) DEFAULT NULL,
-  `c12` int(11) DEFAULT NULL,
-  `c13` int(11) DEFAULT NULL,
-  `c14` int(11) DEFAULT NULL,
-  `c15` int(11) DEFAULT NULL,
-  `c16` int(11) DEFAULT NULL,
-  `c17` int(11) DEFAULT NULL,
-  `c18` varchar(128) DEFAULT NULL,
-  `c20` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
-  `c21` datetime DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8
+
 alter table gcs_tb_5 row_format=compact;
+
 alter table gcs_tb_2 row_format=gcs;
 show table status like'gcs_tb_2';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_2	InnoDB	10	Gcs	24962	105	2637824	0	4571136	13631488	24579	2012-07-03 12:44:52	NULL	NULL	latin1_swedish_ci	NULL	row_format=GCS	
 alter table gcs_tb_2 row_format=Compact;
 show table status like'gcs_tb_2';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_2	InnoDB	10	Compact	24704	106	2637824	0	4571136	13631488	24579	2012-07-03 12:44:52	NULL	NULL	latin1_swedish_ci	NULL	row_format=COMPACT	
+
 rename table gcs_tb_3 to gcs_tb_3_rename;
 alter table gcs_tb_3_rename add column c22 int,add column c23 varchar(129) not null;
 alter table gcs_tb_3_rename drop index idx;
@@ -702,27 +558,26 @@ alter table gcs_tb_3_rename drop column c17;
 alter table gcs_tb_3_rename add column c17 int;
 alter table gcs_tb_3_rename change column c17  c17_rename int;
 rename table gcs_tb_3_rename to gcs_tb_3;
+
 insert into gcs_tb_3(c1,c2,c3,c4,c18,c6) select @a:=@a+1,concat(@a,"VARCHAR AAAAAA"),concat(@a,"CHAR bbbbbb"),@a,"IM BLOB",now() from gcs_tb_1;
-Warnings:
-Warning	1364	Field 'c5' doesn't have a default value
-Warning	1364	Field 'c7' doesn't have a default value
-Warning	1364	Field 'c8' doesn't have a default value
-Warning	1364	Field 'c23' doesn't have a default value
 select count(c1) from gcs_tb_3;
-count(c1)
-49154
+
 alter table gcs_tb_1 row_format=compact;
 show table status like 'gcs_tb_1';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_1	InnoDB	10	Compact	24738	106	2637824	0	4571136	11534336	24578	2012-07-03 12:44:52	NULL	NULL	utf8_general_ci	NULL	row_format=COMPACT	
 alter table gcs_tb_1 row_format=gcs;
 show table status like 'gcs_tb_1';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_tb_1	InnoDB	10	Gcs	24600	107	2637824	0	4571136	11534336	24578	2012-07-03 12:44:52	NULL	NULL	utf8_general_ci	NULL	row_format=GCS	
+
 delete from gcs_tb_1;
+
+
 truncate table gcs_tb_1;
 truncate table gcs_tb_2;
 truncate table gcs_tb_3;
+
 drop table gcs_tb_1;
 drop table gcs_tb_2;
 drop table gcs_tb_3;
+#drop database gcs_1;
+
+
+

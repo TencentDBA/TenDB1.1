@@ -125,11 +125,13 @@ static char *host= NULL, *opt_password= NULL, *user= NULL,
             *post_system= NULL,
             *opt_mysql_unix_port= NULL,
             *opt_row_format= NULL;
+         
 static char *opt_plugin_dir= 0, *opt_default_auth= 0;
 
 const char *delimiter= "\n";
 
 const char *create_schema_string= "mysqlslap";
+const char *opt_table_name="t1";
 
 static my_bool opt_preserve= TRUE, opt_no_drop= FALSE,opt_no_create=FALSE;
 static my_bool debug_info_flag= 0, debug_check_flag= 0;
@@ -706,6 +708,9 @@ static struct my_option my_long_options[] =
   {"socket", 'S', "The socket file to use for connection.",
     &opt_mysql_unix_port, &opt_mysql_unix_port, 0, GET_STR,
     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"table-name",'t',"Table to run test case",
+  &opt_table_name,&opt_table_name,0,GET_STR,REQUIRED_ARG,
+  0,0,0,0,0,0},
 #include <sslopt-longopts.h>
 #ifndef DONT_ALLOW_USER_CHANGE
   {"user", 'u', "User for login if not current user.", &user,
@@ -830,6 +835,7 @@ static statement *
 build_table_string(void)
 {
   char       buf[HUGE_STRING_LENGTH];
+  char       str_buff[HUGE_STRING_LENGTH];
   unsigned int        col_count;
   statement *ptr;
   DYNAMIC_STRING table_string;
@@ -860,7 +866,8 @@ build_table_string(void)
   init_dynamic_string(&table_string, "", 1024, 1024);
   init_dynamic_string(&alter_string, "", 1024, 1024);
 
-  dynstr_append(&table_string, "CREATE TABLE IF NOT EXISTS `t1` (");
+  snprintf(str_buff,HUGE_STRING_LENGTH,"CREATE TABLE `%s` (",opt_table_name);
+  dynstr_append(&table_string,str_buff );
 
   if (auto_generate_sql_autoincrement)
   {
@@ -1105,7 +1112,8 @@ build_table_string(void)
           DBUG_ASSERT(only_one_column);
           break;
   }
-  dynstr_append(&alter_string, "alter table t1 add column(");
+  snprintf(str_buff,HUGE_STRING_LENGTH,"alter table %s add column(",opt_table_name);
+  dynstr_append(&alter_string, str_buff );
   dynstr_append(&alter_string, buf);
   dynstr_append(&alter_string, ")");
 
@@ -1135,6 +1143,7 @@ static statement *
 build_update_string(void)
 {
   char       buf[HUGE_STRING_LENGTH];
+  char       str_buff[HUGE_STRING_LENGTH];
   unsigned int        col_count;
   statement *ptr;
   DYNAMIC_STRING update_string;
@@ -1142,7 +1151,8 @@ build_update_string(void)
 
   init_dynamic_string(&update_string, "", 1024, 1024);
 
-  dynstr_append(&update_string, "UPDATE t1 SET ");
+  snprintf(str_buff,HUGE_STRING_LENGTH,"UPDATE %s SET ",opt_table_name);
+  dynstr_append(&update_string,str_buff);
 
   if (num_int_cols)
     for (col_count= 1; col_count <= num_int_cols; col_count++)
@@ -1208,6 +1218,7 @@ static statement *
 build_insert_string(void)
 {
   char       buf[HUGE_STRING_LENGTH];
+  char       str_buff[HUGE_STRING_LENGTH];
   unsigned int        col_count;
   statement *ptr;
   DYNAMIC_STRING insert_string;
@@ -1215,7 +1226,8 @@ build_insert_string(void)
 
   init_dynamic_string(&insert_string, "", 1024, 1024);
 
-  dynstr_append(&insert_string, "INSERT INTO t1 VALUES (");
+  snprintf(str_buff,HUGE_STRING_LENGTH,"INSERT INTO %s VALUES (",opt_table_name);
+  dynstr_append(&insert_string,str_buff);
 
   if (auto_generate_sql_autoincrement)
   {
@@ -1299,6 +1311,7 @@ static statement *
 build_select_string(my_bool key)
 {
   char       buf[HUGE_STRING_LENGTH];
+  char       str_buff[HUGE_STRING_LENGTH];
   unsigned int        col_count;
   statement *ptr;
   static DYNAMIC_STRING query_string;
@@ -1335,7 +1348,8 @@ build_select_string(my_bool key)
       dynstr_append_mem(&query_string, ",", 1);
 
   }
-  dynstr_append(&query_string, " FROM t1");
+  snprintf(str_buff,HUGE_STRING_LENGTH," FROM %s ",opt_table_name);
+  dynstr_append(&query_string, str_buff);
 
   if ((key) && 
       (auto_generate_sql_autoincrement || auto_generate_sql_guid_primary))
@@ -1723,6 +1737,8 @@ static int
 generate_primary_key_list(MYSQL *mysql, option_string *engine_stmt)
 {
   MYSQL_RES *result;
+  char      str_buff[HUGE_STRING_LENGTH];
+  int       len;
   MYSQL_ROW row;
   unsigned long long counter;
   DBUG_ENTER("generate_primary_key_list");
@@ -1743,7 +1759,8 @@ generate_primary_key_list(MYSQL *mysql, option_string *engine_stmt)
   }
   else
   {
-    if (run_query(mysql, "SELECT id from t1", strlen("SELECT id from t1")))
+      len = snprintf(str_buff,HUGE_STRING_LENGTH,"SELECT id from %s",opt_table_name);
+    if (run_query(mysql,str_buff, strlen(str_buff)))
     {
       fprintf(stderr,"%s: Cannot select GUID primary keys. (%s)\n", my_progname,
               mysql_error(mysql));
@@ -1806,7 +1823,7 @@ create_schema(MYSQL *mysql, const char *db, statement *stmt,
   ulonglong count;
   DBUG_ENTER("create_schema");
 
-  len= snprintf(query, HUGE_STRING_LENGTH, "CREATE SCHEMA IF NOT EXISTS `%s`", db);
+  len= snprintf(query, HUGE_STRING_LENGTH, "CREATE SCHEMA `%s`", db);
 
   if (verbose >= 2)
     printf("Loading Pre-data\n");
@@ -1855,7 +1872,8 @@ create_schema(MYSQL *mysql, const char *db, statement *stmt,
 limit_not_met:
   for (ptr= after_create; ptr && ptr->length; ptr= ptr->next, count++)
   {
-    if (auto_generate_sql && ( auto_generate_sql_number == count))
+    /* if no-create flag set,no auto_generate_sql_write allowed,which means donnot insert/change table before operation. */
+    if (opt_no_create || (auto_generate_sql && ( auto_generate_sql_number == count)))
       break;
 
     if (engine_stmt && engine_stmt->option && ptr->type == CREATE_TABLE_TYPE)
@@ -1881,14 +1899,14 @@ limit_not_met:
       }
     }
     /* no matter how,we run the alter option to finished create table */
-    if(!only_one_column && !opt_no_create && ptr->alter_str && run_query(mysql,ptr->alter_str,ptr->alter_length)){
+    if(!only_one_column && ptr->alter_str && run_query(mysql,ptr->alter_str,ptr->alter_length)){
         fprintf(stderr,"%s: Cannot run alter query %.*s ERROR : %s\n",
             my_progname, (uint)ptr->alter_length, ptr->alter_str, mysql_error(mysql));
         exit(1);
     }
   }
 
-  if (auto_generate_sql && (auto_generate_sql_number > count ))
+  if (!opt_no_create && auto_generate_sql && (auto_generate_sql_number > count ))
   {
     /* Special case for auto create, we don't want to create tables twice */
     after_create= stmt->next;
