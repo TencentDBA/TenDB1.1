@@ -1737,6 +1737,8 @@ public:
   */
   virtual enum row_type get_row_type() const { return ROW_TYPE_NOT_USED; }
 
+  virtual const char* get_row_type_str_for_gcs() const { return "Gcs"; }
+
   virtual const char *index_type(uint key_number) { DBUG_ASSERT(0); return "";}
 
 

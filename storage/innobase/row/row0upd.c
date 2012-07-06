@@ -439,8 +439,9 @@ row_upd_changes_field_size_or_external(
 
         /* 更新列是alter table后加的列 */
         ut_ad((ulint)upd_field->field_no != ULINT_UNDEFINED);
-        if ((ulint)upd_field->field_no >= n_fields_before_alter)
-            return(TRUE);
+        /* TODO: 默认值必须处理 */
+//         if ((ulint)upd_field->field_no >= n_fields_before_alter)
+//             return(TRUE);
 
 		if (dfield_is_null(new_val) && !rec_offs_comp(offsets)) {
 			/* A bug fixed on Dec 31st, 2004: we looked at the
