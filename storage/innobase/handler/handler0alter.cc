@@ -2307,7 +2307,7 @@ ha_innobase::inplace_alter_table(
 
         /* inplace alter table rollback日志 */
         ut_print_timestamp(stderr);
-        fprintf(stderr, "  [InnoDB inplace alter table]  rollback, error no : %u,  query: %s; db_name:%s; tmp_name: %s \n", err, ha_query(), table->s->db.str, tmp_table->alias);
+        fprintf(stderr, "  [InnoDB inplace alter table]  rollback, error no : %ul,  query: %s; db_name:%s; tmp_name: %s \n", err, ha_query(), table->s->db.str, tmp_table->alias);
     }
 
     /* 锁什么时候释放 */

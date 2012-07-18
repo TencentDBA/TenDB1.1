@@ -3165,7 +3165,6 @@ ha_innobase::get_row_type_str_for_gcs() const
 /*=============================*/
 {
     if (prebuilt && prebuilt->table) {
-        const ulint	flags = prebuilt->table->flags;
 
 		ut_ad(dict_table_is_gcs(prebuilt->table));
         /* check if GCS type*/      
