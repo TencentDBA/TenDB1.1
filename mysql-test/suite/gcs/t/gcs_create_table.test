@@ -553,6 +553,8 @@ show table status like'gcs_tb_2';
 
 rename table gcs_tb_3 to gcs_tb_3_rename;
 alter table gcs_tb_3_rename add column c22 int,add column c23 varchar(129) not null;
+
+
 alter table gcs_tb_3_rename drop index idx;
 alter table gcs_tb_3_rename drop column c17;
 alter table gcs_tb_3_rename add column c17 int;

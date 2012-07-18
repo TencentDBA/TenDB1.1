@@ -1451,6 +1451,7 @@ innobase_start_or_create_for_mysql(void)
 
 	sum_of_new_sizes = 0;
 
+    /* 计算InnoDB空间总大小  */
 	for (i = 0; i < srv_n_data_files; i++) {
 #ifndef __WIN__
 		if (sizeof(off_t) < 5 && srv_data_file_sizes[i] >= 262144) {
@@ -1846,6 +1847,13 @@ innobase_start_or_create_for_mysql(void)
 	if (err != DB_SUCCESS) {
 		return((int)DB_ERROR);
 	}
+
+    /* gcs add: check or create the sys_added_cols_default system table created  */
+    err = dict_create_or_check_added_cols_default_tables();
+    if(err != DB_SUCCESS)
+    {
+        return((int)DB_ERROR);
+    }
 
 	/* Create the master thread which does purge and other utility
 	operations */

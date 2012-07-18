@@ -129,6 +129,18 @@ dict_create_add_foreigns_to_dictionary(
 	dict_table_t*	table,	/*!< in: table */
 	trx_t*		trx);	/*!< in: transaction */
 
+
+/****************************************************************//**
+Creates the gcs added columns default value system tables inside InnoDB
+at database creation or database start if they are not found or are
+not of the right form.
+@return	DB_SUCCESS or error code */
+UNIV_INTERN
+ulint
+dict_create_or_check_added_cols_default_tables(void);
+/*================================================*/
+
+
 /* Table create node structure */
 
 struct tab_node_struct{
