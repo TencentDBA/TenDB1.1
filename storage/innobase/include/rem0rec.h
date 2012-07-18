@@ -56,6 +56,11 @@ in addition to the data and the offsets */
 #define REC_STATUS_INFIMUM	2
 #define REC_STATUS_SUPREMUM	3
 
+/* REC_FLAG */
+#define REC_FLAG_NONE           0x00
+#define REC_FLAG_GCS            0x01
+#define REC_FLAG_NODE_PTR       0x02
+
 /* The following four constants are needed in page0zip.c in order to
 efficiently compress and decompress pages. */
 
@@ -779,7 +784,7 @@ rec_get_converted_size_comp_prefix(
 					it does not */
 	const dfield_t*		fields,	/*!< in: array of data fields */
 	ulint			n_fields,/*!< in: number of data fields */
-    ibool           gcs_flag,/*!< in: FALSE: can't use gcs style */
+    ulint           rec_flag,/*!< in: REC_FLAG_* */
 	ulint*			extra);	/*!< out: extra size */
 /**********************************************************//**
 Determines the size of a data tuple in ROW_FORMAT=COMPACT.

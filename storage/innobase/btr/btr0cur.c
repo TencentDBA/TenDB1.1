@@ -1255,7 +1255,7 @@ btr_cur_optimistic_insert(
 		if (UNIV_LIKELY(entry->n_fields >= n_uniq)
 		    && UNIV_UNLIKELY(REC_NODE_PTR_SIZE
 				     + rec_get_converted_size_comp_prefix(
-					     index, entry->fields, n_uniq, FALSE,
+					     index, entry->fields, n_uniq, REC_FLAG_NONE,
 					     NULL)
 				     /* On a compressed page, there is
 				     a two-byte entry in the dense
@@ -1980,7 +1980,6 @@ btr_cur_optimistic_update(
 	ulint		i;
 	ulint		n_ext;
 	ulint*		offsets;
-    ulint       field_count = 0;
 
 	block = btr_cur_get_block(cursor);
 	page = buf_block_get_frame(block);
