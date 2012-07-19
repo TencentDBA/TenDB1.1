@@ -5673,15 +5673,26 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
         /** 
             fast add column cannot support NOT_NULL yet 
             how to deal with timestamp/date/datetime(default not null)?
-        */
+        
+        
         if(def->flags & NOT_NULL_FLAG ){
             add_column_simple_flag = false;
         }
+        */
 
-        /** fast add column cannot support DEFAULT VALUE yet */
+        /** fast add column cannot support DEFAULT VALUE yet 
         if(def->def){
             add_column_simple_flag = false;
         }
+        */
+
+         /************************************************************************/
+         /* we donot support fast add columns with both MAYBE NULL and DEFUALT VALUE  */
+         /************************************************************************/
+        if((~def->flags & NOT_NULL_FLAG) && def->def){
+            add_column_simple_flag = false;
+        }
+
 
         if (!def->after)
             new_create_list.push_back(def);
@@ -5915,7 +5926,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     */
     if (add_column_simple_flag && inplace_info_out && alter_info->change_level == ALTER_TABLE_METADATA_ONLY && !thd->lex->ignore)
     {    
-		//这个地方为啥要判断inplace_info_out,地址不合法?
+		/* 判断是否为create like */
         bool                    support_flag = false;
         /* 进一步检查以下情况 
         
@@ -6072,6 +6083,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     char reg_path[FN_REFLEN+1];
     ha_rows copied,deleted;
     handlerton *old_db_type, *new_db_type, *save_old_db_type;
+    /* fast alter table set need_copy_table=ALTER_TABLE_METADATA_ONLY */
     enum_alter_table_change_level need_copy_table= ALTER_TABLE_METADATA_ONLY;
 #ifdef WITH_PARTITION_STORAGE_ENGINE
     TABLE *table_for_fast_alter_partition= NULL;
