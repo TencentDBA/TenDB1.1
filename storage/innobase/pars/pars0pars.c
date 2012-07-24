@@ -2005,6 +2005,22 @@ pars_info_add_str_literal(
 }
 
 /****************************************************************//**
+binary liternal                                                                  
+ */
+UNIV_INTERN
+void
+pars_info_add_binary_literal(
+/*======================*/
+	pars_info_t*	info,		/*!< in: info struct */
+	const char*	    name,		/*!< in: name */
+	const byte*	    val,		/*!< in: val */
+    ulint           val_len)
+{
+	pars_info_add_literal(info, name, val, val_len,
+			      DATA_FIXBINARY, DATA_BINARY_TYPE);
+}
+
+/****************************************************************//**
 Equivalent to:
 
 char buf[4];

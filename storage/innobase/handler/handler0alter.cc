@@ -1425,7 +1425,8 @@ innodbase_fill_col_info(
     dict_col_t          *col,
     dict_table_t        *table,
     TABLE               *tmp_table,
-    ulint               field_idx
+    ulint               field_idx,
+    mem_heap_t*         heap
 )
 {
     ulint		col_type;
@@ -1532,17 +1533,223 @@ innodbase_fill_col_info(
 
     dict_mem_fill_column_struct(col, field_idx, col_type, prtype, col_len);
 
-//     dict_mem_table_add_col(table, table->heap,
-//         (char*) field->field_name,
-//         col_type,
-//         dtype_form_prtype((ulint)field->type() | nulls_allowed | unsigned_type
-//                                         | binary_type | long_true_varchar,
-//         charset_no),
-//         col_len}
+    if (!dict_col_is_nullable(col))
+    {
+        //TODO(GCS) : set default value，考虑大小端问题
 
+        /* 测试代码 */
+        byte*       def_val;
+        int         tmp = 0;
+        ulint       def_val_len = 0;
+
+        def_val = (byte*)&tmp;
+        if (col->mtype == DATA_INT)
+        {
+            mach_write_to_4(def_val, 0);
+            def_val_len = 4;
+        }
+        else if (col->mtype == DATA_VARCHAR)
+        {
+            memset(def_val, 'a', 4);
+            def_val_len = 4;
+        }
+        else
+        {
+            ut_ad(0);
+        }
+        /* 测试代码 */
+
+        dict_mem_table_add_col_default(table, col, heap, (char*)def_val, def_val_len);
+    }
+    
 err_exit:
     DBUG_RETURN(error);
 }
+
+/*
+    由于默认值是多个不同类型，因此插入系统表中是使用二进制串形式
+
+*/
+static
+char*
+get_default_hex_str(
+    byte*           def_val,
+    ulint           def_val_len,
+    byte*           buffer,
+    ulint           buffer_len
+)
+{
+    ulint       i;  
+    ulint       j = 0;
+    static const char* hex_array = "0123456789ABCDEF";
+    ut_a(buffer_len > def_val_len * 2 + 2 + 1);
+
+    buffer[j++] = '0';
+    buffer[j++] = 'x';
+    for (i = 0; i < def_val_len; ++i)
+    {
+        buffer[j++] = hex_array[def_val[i] >> 4];
+        buffer[j++] = hex_array[def_val[i] & 0x0F];
+    }
+
+    buffer[j] = 0;
+
+    return (char*)buffer;
+}
+
+
+
+ulint
+innobase_add_column_to_dictionary_for_gcs(
+   dict_table_t*            table,                                  
+   ulint                    pos,
+   const char*              name,
+   ulint                    mtype,
+   ulint                    prtype,
+   ulint                    len,
+   trx_t*                   trx
+)
+{
+    pars_info_t*	info;
+    ulint   		error_no = DB_SUCCESS;
+
+    info = pars_info_create();  /* que_eval_sql执行完会释放 */
+
+    pars_info_add_ull_literal(info, "table_id", table->id);
+    pars_info_add_int4_literal(info, "pos", pos);
+    pars_info_add_str_literal(info, "name", name);
+    pars_info_add_int4_literal(info, "mtype", mtype);
+    pars_info_add_int4_literal(info, "prtype", prtype);
+    pars_info_add_int4_literal(info, "len", len);
+
+    /* SYS_COLUMNS(table_id, pos, name, mtype, prtype, len, prec) */
+    error_no = que_eval_sql(
+        info,
+        "PROCEDURE ADD_SYS_COLUMNS_PROC () IS\n"
+        "BEGIN\n"
+        "INSERT INTO SYS_COLUMNS VALUES(:table_id, :pos,\n"
+        ":name, :mtype, :prtype, :len, 0);\n"
+        "END;\n",
+        FALSE, trx);
+
+    DBUG_EXECUTE_IF("ib_add_column_error",
+        error_no = DB_OUT_OF_FILE_SPACE;);
+
+    if (error_no != DB_SUCCESS)
+    {
+        //for safe
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "ADD_SYS_COLUMNS_PROC error %s %d field_name(%s)", __FILE__, __LINE__, name);
+    }
+
+    return error_no;
+}
+
+
+ulint
+innobase_update_systable_n_cols_for_gcs(
+    dict_table_t*               table,
+    ulint                       new_n_field,
+    trx_t*                      trx
+)
+{
+    pars_info_t*	info;
+    ulint   		error_no = DB_SUCCESS;
+    lint            n_cols_before_alter;
+
+    info = pars_info_create();  /* que_eval_sql执行完会释放 */
+
+    //ut_ad(dict_table_get_n_cols(table) - DATA_N_SYS_COLS + n_add == new_n_field);
+
+    ut_ad(dict_table_is_gcs(table));
+
+    pars_info_add_int4_literal(info, "n_col", new_n_field | (1 << 31) | (1 << 30));
+
+    if (table->n_cols_before_alter_table > 0)
+    {
+        n_cols_before_alter = table->n_cols_before_alter_table - DATA_N_SYS_COLS;
+        ut_ad(n_cols_before_alter > 0);
+    }
+    else
+    {
+        /* 第一次alter table add column */
+        n_cols_before_alter = dict_table_get_n_cols(table) - DATA_N_SYS_COLS;
+    }
+
+
+    ut_ad(!(table->flags >> DICT_TF2_SHIFT));
+    pars_info_add_int4_literal(info, "mix_len", n_cols_before_alter << 16);     /* 存在高两字节！ */
+    pars_info_add_str_literal(info, "table_name", table->name);
+
+    /* 更新列数 */
+    error_no = que_eval_sql(
+        info,
+        "PROCEDURE UPDATE_SYS_TABLES_N_COLS_PROC () IS\n"
+        "BEGIN\n"
+        "UPDATE SYS_TABLES SET N_COLS = :n_col, MIX_LEN = :mix_len \n"
+        "WHERE NAME = :table_name;\n"
+        "END;\n",
+        FALSE, trx);
+
+    if (error_no != DB_SUCCESS)
+    {
+        //for safe
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "UPDATE_SYS_TABLES_N_COLS_PROC error %s %d table_name(%s)", __FILE__, __LINE__, table->name);
+    }
+
+    return error_no;
+}
+
+ulint
+innobase_add_column_default_to_dictionary_for_gcs(
+    dict_table_t*           table,
+    dict_col_t*             col,
+    trx_t*                  trx
+)
+{
+    pars_info_t*	info;
+    ulint   		error_no = DB_SUCCESS;
+
+    info = pars_info_create();  /* que_eval_sql执行完会释放 */
+
+    ut_ad(dict_table_is_gcs(table) && !dict_col_is_nullable(col));
+    
+    pars_info_add_ull_literal(info, "table_id", table->id);
+    pars_info_add_int4_literal(info, "pos", col->ind);
+
+    //TODO(GCS) ,whether default value too big?
+    pars_info_add_binary_literal(info, "def_val", col->def_val->def_val, col->def_val->def_val_len);
+    pars_info_add_int4_literal(info, "def_val_len", col->def_val->def_val_len);
+
+    error_no = que_eval_sql(
+        info,
+        "PROCEDURE ADD_SYS_ADDED_COLS_DEFAULT_PROC () IS\n"
+        "BEGIN\n"
+        "INSERT INTO SYS_ADDED_COLS_DEFAULT VALUES(:table_id, :pos, :def_val, :def_val_len);\n"
+        "END;\n",
+        FALSE, trx);
+
+    if (error_no != DB_SUCCESS)
+    {
+        //for safe
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "ADD_SYS_ADDED_COLS_DEFAULT_PROC error %s %d table_name(%s) colid(%d)", __FILE__, __LINE__, table->name, col->ind);
+    }
+
+    return error_no;
+    
+}
+
 
 /*
 
@@ -1560,7 +1767,7 @@ innobase_add_columns_simple(
     Alter_inplace_info* inplace_info
 )
 {
-    pars_info_t*	info;
+    //pars_info_t*	info;
     ulint   		error_no = DB_SUCCESS;
     Alter_info*     alter_info = static_cast<Alter_info*>(inplace_info->alter_info);
     Create_field*   cfield;
@@ -1640,45 +1847,28 @@ innobase_add_columns_simple(
 
             field = tmp_table->field[idx];
 
-            error_no = innodbase_fill_col_info(trx, &col_arr[idx], table, tmp_table, idx);
-
+            error_no = innodbase_fill_col_info(trx, &col_arr[idx], table, tmp_table, idx, heap);
             if (error_no != DB_SUCCESS)
+                goto err_exit;
+
+            error_no = innobase_add_column_to_dictionary_for_gcs(table, 
+                                            col_arr[idx].ind, field->field_name, 
+                                            col_arr[idx].mtype, col_arr[idx].prtype, 
+                                            col_arr[idx].len, 
+                                            trx);
+            if (error_no != DB_SUCCESS )
             {
                 goto err_exit;
             }
 
-            info = pars_info_create();  /* que_eval_sql执行完会释放 */
-
-            pars_info_add_ull_literal(info, "table_id", table->id);
-            pars_info_add_int4_literal(info, "pos", col_arr[idx].ind);
-            pars_info_add_str_literal(info, "name", field->field_name);
-            pars_info_add_int4_literal(info, "mtype", col_arr[idx].mtype);
-            pars_info_add_int4_literal(info, "prtype", col_arr[idx].prtype);
-            pars_info_add_int4_literal(info, "len", col_arr[idx].len);
-        
-            /* SYS_COLUMNS(table_id, pos, name, mtype, prtype, len, prec) */
-            error_no = que_eval_sql(
-                info,
-                "PROCEDURE ADD_SYS_COLUMNS_PROC () IS\n"
-                "BEGIN\n"
-                "INSERT INTO SYS_COLUMNS VALUES(:table_id, :pos,\n"
-                ":name, :mtype, :prtype, :len, 0);\n"
-                "END;\n",
-                FALSE, trx);
-
-            DBUG_EXECUTE_IF("ib_add_column_error",
-                error_no = DB_OUT_OF_FILE_SPACE;);
-
-            if (error_no != DB_SUCCESS)
+            if (!dict_col_is_nullable(&col_arr[idx]))
             {
-                //for safe
-                push_warning_printf(
-                    (THD*) trx->mysql_thd,
-                    MYSQL_ERROR::WARN_LEVEL_WARN,
-                    ER_CANT_CREATE_TABLE,
-                    "ADD_SYS_COLUMNS_PROC error %s %d field_name(%s)", __FILE__, __LINE__, field->field_name);
-
-                goto err_exit;
+                /* 必含默认值 */
+                error_no = innobase_add_column_default_to_dictionary_for_gcs(table, &col_arr[idx], trx);
+                if (error_no != DB_SUCCESS )
+                {
+                    goto err_exit;
+                }
             }
 
             n_add++;
@@ -1708,51 +1898,11 @@ innobase_add_columns_simple(
         ut_a((ulint)(col_name - col_names) < 200 * tmp_table->s->fields);
     }
 
-    info = pars_info_create();  /* que_eval_sql执行完会释放 */
-
     ut_ad(dict_table_get_n_cols(table) - DATA_N_SYS_COLS + n_add == tmp_table->s->fields);
 
-    ut_ad(dict_table_is_gcs(table));
-
-    pars_info_add_int4_literal(info, "n_col", tmp_table->s->fields | (1 << 31) | (1 << 30));
-    
-    if (table->n_cols_before_alter_table > 0)
-    {
-        n_cols_before_alter = table->n_cols_before_alter_table - DATA_N_SYS_COLS;
-        ut_ad(n_cols_before_alter > 0);
-    }
-    else
-    {
-        /* 第一次alter table add column */
-        n_cols_before_alter = dict_table_get_n_cols(table) - DATA_N_SYS_COLS;
-    }
-
-    /* 必定不是临时表 */
-    ut_ad(!(table->flags >> DICT_TF2_SHIFT));
-    pars_info_add_int4_literal(info, "mix_len", n_cols_before_alter << 16);     /* 存在高两字节！ */
-    pars_info_add_str_literal(info, "table_name", table->name);
-    
-    /* 更新列数 */
-    error_no = que_eval_sql(
-        info,
-        "PROCEDURE UPDATE_SYS_TABLES_N_COLS_PROC () IS\n"
-        "BEGIN\n"
-        "UPDATE SYS_TABLES SET N_COLS = :n_col, MIX_LEN = :mix_len \n"
-        "WHERE NAME = :table_name;\n"
-        "END;\n",
-        FALSE, trx);
-
+    error_no = innobase_update_systable_n_cols_for_gcs(table, tmp_table->s->fields, trx);
     if (error_no != DB_SUCCESS)
-    {
-        //for safe
-        push_warning_printf(
-            (THD*) trx->mysql_thd,
-            MYSQL_ERROR::WARN_LEVEL_WARN,
-            ER_CANT_CREATE_TABLE,
-            "UPDATE_SYS_TABLES_N_COLS_PROC error %s %d table_name(%s)", __FILE__, __LINE__, table->name);
-
         goto err_exit;
-    }
 
     while (lock_retry++ < 10)
     {

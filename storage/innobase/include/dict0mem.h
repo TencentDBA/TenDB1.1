@@ -173,6 +173,18 @@ dict_mem_table_add_col(
 	ulint		prtype,	/*!< in: precise type */
 	ulint		len);	/*!< in: precision */
 /**********************************************************************//**
+This function set col_default for gcs TABLE
+*/
+UNIV_INTERN
+void
+dict_mem_table_add_col_default(
+    dict_table_t*           table,
+    dict_col_t*             col,
+    mem_heap_t*             heap,
+    const char*             def_val,
+    ulint                   def_val_len
+);
+/**********************************************************************//**
 This function populates a dict_col_t memory structure with
 supplied information. */
 UNIV_INTERN
@@ -269,6 +281,24 @@ dict_mem_referenced_table_name_lookup_set(
 	dict_foreign_t*	foreign,	/*!< in/out: foreign struct */
 	ibool		do_alloc);	/*!< in: is an alloc needed */
 
+struct dict_col_default_struct {
+
+    dict_col_t*     col;
+
+    union un_element {
+        char*       var_val;        /* DATA_VARCHAR,DATA_CHAR,DATA_FIXBINARY,DATA_BINARY,DATA_BLOB */
+                                    /* DATA_DECIMAL,DATA_VARMYSQL,DATA_MYSQL */
+        ulint       int_val;        /* DATA_INT */
+        float       float_val;      /* DATA_FLOAT */
+        double      double_val;     /* DATA_DOUBLE */
+    } real_val;
+
+    byte*           def_val;        /* ×ÜÒÔ\0½áÊø */
+    //unsigned        def_val_len:16;
+    unsigned        def_val_len;
+};
+
+
 /** Data structure for a column in a table */
 struct dict_col_struct{
 	/*----------------------*/
@@ -312,6 +342,8 @@ struct dict_col_struct{
 	unsigned	max_prefix:12;	/*!< maximum index prefix length on
 					this column. Our current max limit is
 					3072 for Barracuda table */
+
+    dict_col_default_t*     def_val;
 };
 
 /** @brief DICT_ANTELOPE_MAX_INDEX_COL_LEN is measured in bytes and
