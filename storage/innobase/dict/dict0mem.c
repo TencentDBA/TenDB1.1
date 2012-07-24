@@ -220,6 +220,60 @@ dict_mem_table_add_col(
 	dict_mem_fill_column_struct(col, i, mtype, prtype, len);
 }
 
+UNIV_INTERN
+void
+dict_mem_table_add_col_default(
+    dict_table_t*           table,
+    dict_col_t*             col,
+    mem_heap_t*             heap,
+    const char*             def_val,
+    ulint                   def_val_len
+)
+{
+    ut_ad(table && col && heap && def_val && def_val_len > 0);
+    ut_ad(!dict_col_is_nullable(col));
+
+    col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
+    col->def_val->col = col;
+    col->def_val->def_val_len = def_val_len;
+    col->def_val->def_val = mem_heap_strdupl(heap, def_val, def_val_len);
+
+    switch (col->mtype)
+    {
+    case DATA_VARCHAR:
+    case DATA_CHAR:
+    case DATA_BINARY:
+    case DATA_FIXBINARY:
+    case DATA_BLOB:
+    case DATA_MYSQL:
+    case DATA_DECIMAL:
+    case DATA_VARMYSQL:
+        col->def_val->real_val.var_val = col->def_val->def_val;
+        break;
+
+    case DATA_INT:
+        ut_ad(def_val_len == 4);
+        col->def_val->real_val.int_val = mach_read_from_4(col->def_val->def_val);
+        break;
+
+    case DATA_FLOAT:
+        ut_ad(def_val_len == sizeof(float));
+        col->def_val->real_val.float_val = mach_float_read(col->def_val->def_val);
+        break;
+
+    case DATA_DOUBLE:
+        ut_ad(def_val_len == sizeof(double));
+        col->def_val->real_val.double_val = mach_double_read(col->def_val->def_val);
+        break;
+
+    case DATA_SYS_CHILD:	/* address of the child page in node pointer */
+    case DATA_SYS:          /* system column */
+    default:
+        ut_a(0);
+        break;
+    }
+
+}
 
 /**********************************************************************//**
 This function populates a dict_col_t memory structure with
@@ -246,6 +300,7 @@ dict_mem_fill_column_struct(
 	column->mtype = (unsigned int) mtype;
 	column->prtype = (unsigned int) prtype;
 	column->len = (unsigned int) col_len;
+    column->def_val = NULL;
 #ifndef UNIV_HOTBACKUP
         dtype_get_mblen(mtype, prtype, &mbminlen, &mbmaxlen);
 	dict_col_set_mbminmaxlen(column, mbminlen, mbmaxlen);
@@ -443,8 +498,16 @@ dict_mem_table_add_col_simple(
 
     /* 拷贝前N列（用户列）及列名 */
     table->cols = mem_heap_zalloc(table->heap, sizeof(dict_col_t) * (DATA_N_SYS_COLS + n_col));
-
     memcpy(table->cols, col_arr, n_col * sizeof(dict_col_t));
+
+    /* 还原默认值信息，使用table->heap分配内存 */
+    for (i = table->n_cols_before_alter_table - DATA_N_SYS_COLS; i < n_col; ++i)
+    {
+        if (table->cols[i].def_val)
+        {
+            dict_mem_table_add_col_default(table, &table->cols[i], table->heap, table->cols[i].def_val->def_val, table->cols[i].def_val->def_val_len);
+        }
+    }
 
     table->n_def = n_col;
     table->n_cols = n_col + DATA_N_SYS_COLS;
@@ -560,9 +623,3 @@ dict_mem_table_add_col_simple(
     /* 外键 */
 }
 
-
-
-//if void is OK ? or ulint maybe better
-void dict_mem_table_alter_row_format_simple(){
-
-}
