@@ -868,7 +868,7 @@ err_len:
         goto err_len;
     }
 
-    dict_mem_table_add_col_default(table, col, heap, def_val, def_val_len);
+    dict_mem_table_add_col_default(table, col, table->heap, def_val, def_val_len);
 
 	return(NULL);
 }

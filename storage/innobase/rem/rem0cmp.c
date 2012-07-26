@@ -304,6 +304,9 @@ cmp_data_data_slow(
 	ulint	data2_byte;
 	ulint	cur_bytes;
 
+
+    ut_ad(len1 != UNIV_SQL_DEFAULT && len2 != UNIV_SQL_DEFAULT);
+
 	if (len1 == UNIV_SQL_NULL || len2 == UNIV_SQL_NULL) {
 
 		if (len1 == len2) {
@@ -487,6 +490,9 @@ cmp_dtuple_rec_with_match(
 
 		rec_b_ptr = rec_get_nth_field(rec, offsets,
 					      cur_field, &rec_f_len);
+
+        /* 比较字段不可能是默认值 */
+        ut_a(rec_f_len != UNIV_SQL_DEFAULT);
 
 		/* If we have matched yet 0 bytes, it may be that one or
 		both the fields are SQL null, or the record or dtuple may be
@@ -751,6 +757,9 @@ cmp_rec_rec_simple(
 		rec2_b_ptr = rec_get_nth_field(rec2, offsets2,
 					       cur_field, &rec2_f_len);
 
+        ut_a(rec1_f_len != UNIV_SQL_DEFAULT &&
+                rec2_f_len != UNIV_SQL_DEFAULT);
+
 		if (rec1_f_len == UNIV_SQL_NULL
 		    || rec2_f_len == UNIV_SQL_NULL) {
 
@@ -926,8 +935,14 @@ cmp_rec_rec_with_match(
 
 		rec1_b_ptr = rec_get_nth_field(rec1, offsets1,
 					       cur_field, &rec1_f_len);
+        if (rec1_f_len == UNIV_SQL_DEFAULT) 
+            rec1_b_ptr = dict_index_get_nth_col_def(index, cur_field, &rec1_f_len);
+
 		rec2_b_ptr = rec_get_nth_field(rec2, offsets2,
 					       cur_field, &rec2_f_len);
+
+        if (rec2_f_len == UNIV_SQL_DEFAULT) 
+            rec2_b_ptr = dict_index_get_nth_col_def(index, cur_field, &rec2_f_len);
 
 		if (cur_bytes == 0) {
 			if (cur_field == 0) {
@@ -1177,6 +1192,9 @@ cmp_debug_dtuple_rec_with_match(
 
 		rec_f_data = rec_get_nth_field(rec, offsets,
 					       cur_field, &rec_f_len);
+
+        ut_a( dtuple_f_len != UNIV_SQL_DEFAULT &&
+                rec_f_len != UNIV_SQL_DEFAULT);
 
 		if (rec_offs_nth_extern(offsets, cur_field)) {
 			/* We do not compare to an externally stored field */

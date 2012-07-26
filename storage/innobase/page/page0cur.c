@@ -200,6 +200,7 @@ page_cur_rec_field_extends(
 /*=======================*/
 	const dtuple_t*	tuple,	/*!< in: data tuple */
 	const rec_t*	rec,	/*!< in: record */
+    const dict_index_t*     index,  /*!< in:index  */
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
 	ulint		n)	/*!< in: compare nth field */
 {
@@ -214,6 +215,8 @@ page_cur_rec_field_extends(
 	type = dfield_get_type(dfield);
 
 	rec_f = rec_get_nth_field(rec, offsets, n, &rec_f_len);
+    if (rec_f_len == UNIV_SQL_DEFAULT)
+        rec_f = dict_index_get_nth_col_def(index, n, &rec_f_len);
 
 	if (type->mtype == DATA_VARCHAR
 	    || type->mtype == DATA_CHAR
@@ -390,7 +393,7 @@ low_slot_match:
 #ifdef PAGE_CUR_LE_OR_EXTENDS
 			if (mode == PAGE_CUR_LE_OR_EXTENDS
 			    && page_cur_rec_field_extends(
-				    tuple, mid_rec, offsets,
+				    tuple, mid_rec, index, offsets,
 				    cur_matched_fields)) {
 
 				goto low_slot_match;
@@ -447,7 +450,7 @@ low_rec_match:
 #ifdef PAGE_CUR_LE_OR_EXTENDS
 			if (mode == PAGE_CUR_LE_OR_EXTENDS
 			    && page_cur_rec_field_extends(
-				    tuple, mid_rec, offsets,
+				    tuple, mid_rec, index, offsets,
 				    cur_matched_fields)) {
 
 				goto low_rec_match;

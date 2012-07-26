@@ -211,7 +211,7 @@ btr_blob_dbg_add_rec(
 			const byte*	field_ref = rec_get_nth_field(
 				rec, offsets, i, &len);
 
-			ut_a(len != UNIV_SQL_NULL);
+			ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 			ut_a(len >= BTR_EXTERN_FIELD_REF_SIZE);
 			field_ref += len - BTR_EXTERN_FIELD_REF_SIZE;
 
@@ -302,7 +302,7 @@ btr_blob_dbg_remove_rec(
 			const byte*	field_ref = rec_get_nth_field(
 				rec, offsets, i, &len);
 
-			ut_a(len != UNIV_SQL_NULL);
+			ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 			ut_a(len >= BTR_EXTERN_FIELD_REF_SIZE);
 			field_ref += len - BTR_EXTERN_FIELD_REF_SIZE;
 
@@ -523,7 +523,7 @@ btr_blob_dbg_set_deleted_flag(
 			const byte*	field_ref = rec_get_nth_field(
 				rec, offsets, i, &len);
 
-			ut_a(len != UNIV_SQL_NULL);
+			ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 			ut_a(len >= BTR_EXTERN_FIELD_REF_SIZE);
 			field_ref += len - BTR_EXTERN_FIELD_REF_SIZE;
 
@@ -581,7 +581,7 @@ btr_blob_dbg_owner(
 	ut_a(rec_offs_nth_extern(offsets, i));
 
 	field_ref = rec_get_nth_field(rec, offsets, i, &len);
-	ut_a(len != UNIV_SQL_NULL);
+	ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 	ut_a(len >= BTR_EXTERN_FIELD_REF_SIZE);
 	field_ref += len - BTR_EXTERN_FIELD_REF_SIZE;
 
@@ -3950,11 +3950,17 @@ btr_index_rec_validate(
 		length.  When fixed_size == 0, prefix_len is the maximum
 		length of the prefix index column. */
 
+        /* 以下用于校验两种非法情况
+           1. 非前缀索引，非NULL字段长度不等于定义长度
+           2. 前缀索引，非NULL字段长度大于前缀索引定义长度
+
+           需要加上对默认值的判断，因为增加默认值可能违反原规定。
+        */
 		if ((dict_index_get_nth_field(index, i)->prefix_len == 0
-		     && len != UNIV_SQL_NULL && fixed_size
+		     && len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT && fixed_size
 		     && len != fixed_size)
 		    || (dict_index_get_nth_field(index, i)->prefix_len > 0
-			&& len != UNIV_SQL_NULL
+			&& len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT 
 			&& len
 			> dict_index_get_nth_field(index, i)->prefix_len)) {
 

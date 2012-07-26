@@ -575,7 +575,7 @@ btr_search_update_hash_ref(
 				rec_get_offsets(rec, index, offsets_,
 						ULINT_UNDEFINED, &heap),
 				block->curr_n_fields,
-				block->curr_n_bytes, index->id);
+				block->curr_n_bytes, index);
 		if (UNIV_LIKELY_NULL(heap)) {
 			mem_heap_free(heap);
 		}
@@ -1110,7 +1110,7 @@ retry:
 		offsets = rec_get_offsets(rec, index, offsets,
 					  n_fields + (n_bytes > 0), &heap);
 		ut_a(rec_offs_n_fields(offsets) == n_fields + (n_bytes > 0));
-		fold = rec_fold(rec, offsets, n_fields, n_bytes, index_id);
+		fold = rec_fold(rec, offsets, n_fields, n_bytes, index);
 
 		if (fold == prev_fold && prev_fold != 0) {
 
@@ -1329,7 +1329,7 @@ btr_search_build_page_hash_index(
 		}
 	}
 
-	fold = rec_fold(rec, offsets, n_fields, n_bytes, index->id);
+	fold = rec_fold(rec, offsets, n_fields, n_bytes, index);
 
 	if (left_side) {
 
@@ -1356,7 +1356,7 @@ btr_search_build_page_hash_index(
 		offsets = rec_get_offsets(next_rec, index, offsets,
 					  n_fields + (n_bytes > 0), &heap);
 		next_fold = rec_fold(next_rec, offsets, n_fields,
-				     n_bytes, index->id);
+				     n_bytes, index);
 
 		if (fold != next_fold) {
 			/* Insert an entry into the hash index */
@@ -1534,7 +1534,7 @@ btr_search_update_hash_on_delete(
     /* 把以下操作移向上锁之后 */
     fold = rec_fold(rec, rec_get_offsets(rec, index, offsets_,
         ULINT_UNDEFINED, &heap),
-        block->curr_n_fields, block->curr_n_bytes, index->id);
+        block->curr_n_fields, block->curr_n_bytes, index);
     if (UNIV_LIKELY_NULL(heap)) {
         mem_heap_free(heap);
     }
@@ -1672,19 +1672,19 @@ btr_search_update_hash_on_insert(
 
 	offsets = rec_get_offsets(ins_rec, index, offsets,
 				  ULINT_UNDEFINED, &heap);
-	ins_fold = rec_fold(ins_rec, offsets, n_fields, n_bytes, index->id);
+	ins_fold = rec_fold(ins_rec, offsets, n_fields, n_bytes, index);
 
 	if (!page_rec_is_supremum(next_rec)) {
 		offsets = rec_get_offsets(next_rec, index, offsets,
 					  n_fields + (n_bytes > 0), &heap);
 		next_fold = rec_fold(next_rec, offsets, n_fields,
-				     n_bytes, index->id);
+				     n_bytes, index);
 	}
 
 	if (!page_rec_is_infimum(rec)) {
 		offsets = rec_get_offsets(rec, index, offsets,
 					  n_fields + (n_bytes > 0), &heap);
-		fold = rec_fold(rec, offsets, n_fields, n_bytes, index->id);
+		fold = rec_fold(rec, offsets, n_fields, n_bytes, index);
 
          rw_lock_s_unlock(&btr_search_latch);
 
@@ -1870,6 +1870,8 @@ btr_search_validate(void)
 			ut_a(!dict_index_is_ibuf(block->index));
 
 			page_index_id = btr_page_get_index_id(block->frame);
+            /* block->index可能为NULL */
+            ut_a(!block->index || page_index_id == block->index->id);
 
 			offsets = rec_get_offsets(node->data,
 						  block->index, offsets,
@@ -1882,27 +1884,44 @@ btr_search_validate(void)
 					offsets,
 					block->curr_n_fields,
 					block->curr_n_bytes,
-					page_index_id)) {
+					block->index)) {    /* rec_fold要求index不能为NULL,如果block->index为NULL，也不会执行rec_fold，所以是安全的 */
 				const page_t*	page = block->frame;
 
 				ok = FALSE;
 				ut_print_timestamp(stderr);
 
-				fprintf(stderr,
-					"  InnoDB: Error in an adaptive hash"
-					" index pointer to page %lu\n"
-					"InnoDB: ptr mem address %p"
-					" index id %llu,"
-					" node fold %lu, rec fold %lu\n",
-					(ulong) page_get_page_no(page),
-					node->data,
-					(ullint) page_index_id,
-					(ulong) node->fold,
-					(ulong) rec_fold(node->data,
-							 offsets,
-							 block->curr_n_fields,
-							 block->curr_n_bytes,
-							 page_index_id));
+                if (block->index)
+                {
+                    /* 只有block->index不为NULL，才计算rec_fold */
+                    fprintf(stderr,
+                        "  InnoDB: Error in an adaptive hash"
+                        " index pointer to page %lu\n"
+                        "InnoDB: ptr mem address %p"
+                        " index id %llu,"
+                        " node fold %lu, rec fold %lu\n",
+                        (ulong) page_get_page_no(page),
+                        node->data,
+                        (ullint) page_index_id,
+                        (ulong) node->fold,
+                        (ulong) rec_fold(node->data,
+                        offsets,
+                        block->curr_n_fields,
+                        block->curr_n_bytes,
+                        block->index));
+                }
+                else
+                {
+                    fprintf(stderr,
+                        "  InnoDB: Error in an adaptive hash"
+                        " index pointer to page %lu\n"
+                        "InnoDB: ptr mem address %p"
+                        " index id %llu,"
+                        " node fold %lu, rec fold unknown\n",
+                        (ulong) page_get_page_no(page),
+                        node->data,
+                        (ullint) page_index_id,
+                        (ulong) node->fold);
+                }
 
 				fputs("InnoDB: Record ", stderr);
 				rec_print_new(stderr, node->data, offsets);

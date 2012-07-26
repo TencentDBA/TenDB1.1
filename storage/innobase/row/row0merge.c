@@ -1894,7 +1894,7 @@ row_merge_insert_index_tuples(
 			}
 
 			dtuple = row_rec_to_index_entry_low(
-				mrec, index, offsets, &n_ext, tuple_heap);
+				mrec, index, offsets, &n_ext, tuple_heap, FALSE);
 
 			if (UNIV_UNLIKELY(n_ext)) {
 				row_merge_copy_blobs(mrec, offsets, zip_size,

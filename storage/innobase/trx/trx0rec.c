@@ -260,6 +260,8 @@ trx_undo_page_report_insert(
 
 		ptr += mach_write_compressed(ptr, flen);
 
+        ut_ad( flen != UNIV_SQL_DEFAULT);
+
 		if (flen != UNIV_SQL_NULL) {
 			if (trx_undo_left(undo_page, ptr) < flen) {
 
@@ -335,6 +337,8 @@ trx_undo_rec_get_col_val(
 	ptr += mach_get_compressed_size(*len);
 
 	*orig_len = 0;
+
+    ut_ad(*len != UNIV_SQL_DEFAULT);
 
 	switch (*len) {
 	case UNIV_SQL_NULL:
@@ -642,6 +646,7 @@ trx_undo_page_report_modify(
 	for (i = 0; i < dict_index_get_n_unique(index); i++) {
 
 		field = rec_get_nth_field(rec, offsets, i, &flen);
+        ut_ad(flen != UNIV_SQL_DEFAULT);
 
 		/* The ordering columns must not be stored externally. */
 		ut_ad(!rec_offs_nth_extern(offsets, i));
@@ -690,6 +695,8 @@ trx_undo_page_report_modify(
 
 			/* Save the old value of field */
 			field = rec_get_nth_field(rec, offsets, pos, &flen);
+            if (flen == UNIV_SQL_DEFAULT) 
+                field = dict_index_get_nth_col_def(index, pos, &flen);
 
 			if (trx_undo_left(undo_page, ptr) < 15) {
 
@@ -788,6 +795,8 @@ trx_undo_page_report_modify(
 				/* Save the old value of field */
 				field = rec_get_nth_field(rec, offsets, pos,
 							  &flen);
+                if (flen == UNIV_SQL_DEFAULT) 
+                    field = dict_index_get_nth_col_def(index, pos, &flen);
 
 				if (rec_offs_nth_extern(offsets, pos)) {                /* Ç°×ºË÷ÒýÁÐ£¿ */
 					const dict_col_t*	col =

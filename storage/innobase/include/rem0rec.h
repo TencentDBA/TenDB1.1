@@ -489,6 +489,17 @@ ulint
 rec_offs_any_extern(
 /*================*/
 	const ulint*	offsets);/*!< in: array returned by rec_get_offsets() */
+
+
+/******************************************************//**
+Determine if the offsets are for a record containing
+default value stored columns.
+@return	nonzero if default value stored */
+UNIV_INLINE
+ulint
+rec_offs_any_default(
+/*================*/
+	const ulint*	offsets);/*!< in: array returned by rec_get_offsets() */
 #ifdef UNIV_BLOB_NULL_DEBUG
 /******************************************************//**
 Determine if the offsets are for a record containing null BLOB pointers.
@@ -507,6 +518,15 @@ Returns nonzero if the extern bit is set in nth field of rec.
 UNIV_INLINE
 ulint
 rec_offs_nth_extern(
+/*================*/
+	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
+	ulint		n);	/*!< in: nth field */
+/******************************************************//**
+Returns nonzero if the default bit is set in nth field of rec.
+@return	nonzero if default bit is set */
+UNIV_INLINE
+ulint
+rec_offs_nth_default(
 /*================*/
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
 	ulint		n);	/*!< in: nth field */
@@ -726,7 +746,7 @@ rec_fold(
 					fields to fold */
 	ulint		n_bytes,	/*!< in: number of bytes to fold
 					in an incomplete last field */
-	index_id_t	tree_id)	/*!< in: index tree id */
+	const dict_index_t*       index)	/*!< in: index */
 	__attribute__((pure));
 #endif /* !UNIV_HOTBACKUP */
 /*********************************************************//**

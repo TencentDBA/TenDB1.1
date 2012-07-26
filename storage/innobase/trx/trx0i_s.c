@@ -658,6 +658,8 @@ put_nth_field(
 	/* now buf_size >= 1 */
 
 	data = rec_get_nth_field(rec, offsets, n, &data_len);
+    if (data_len == UNIV_SQL_DEFAULT)
+        data = dict_index_get_nth_col_def(index, n, &data_len);
 
 	dict_field = dict_index_get_nth_field(index, n);
 

@@ -419,13 +419,13 @@ row_upd_changes_field_size_or_external(
 	ulint			new_len;
 	ulint			n_fields;
 	ulint			i;
-    ulint           n_fields_before_alter = ULINT_UNDEFINED;
+    //ulint           n_fields_before_alter = ULINT_UNDEFINED;
 
-    if (dict_index_is_gcs_clust_after_alter_table(index))
-    {
-        ut_ad(index->n_fields_before_alter > 0);
-        n_fields_before_alter = index->n_fields_before_alter;
-    }
+    //if (dict_index_is_gcs_clust_after_alter_table(index))
+    //{
+    //    ut_ad(index->n_fields_before_alter > 0);
+    //    n_fields_before_alter = index->n_fields_before_alter;
+    //}
     
 
 	ut_ad(rec_offs_validate(NULL, index, offsets));
@@ -438,8 +438,8 @@ row_upd_changes_field_size_or_external(
 		new_len = dfield_get_len(new_val);
 
         /* 更新列是alter table后加的列 */
-        ut_ad((ulint)upd_field->field_no != ULINT_UNDEFINED);
-        /* TODO: 默认值必须处理 */
+        //ut_ad((ulint)upd_field->field_no != ULINT_UNDEFINED);
+        /* TODO(GCS): 默认值必须处理 */
 //         if ((ulint)upd_field->field_no >= n_fields_before_alter)
 //             return(TRUE);
 
@@ -457,9 +457,10 @@ row_upd_changes_field_size_or_external(
 
 		old_len = rec_offs_nth_size(offsets, upd_field->field_no);
 
-		if (rec_offs_comp(offsets)
-		    && rec_offs_nth_sql_null(offsets,
-					     upd_field->field_no)) {
+        if (rec_offs_comp(offsets))
+        {
+		    if (rec_offs_nth_sql_null(offsets, upd_field->field_no)) 
+            {
 			/* Note that in the compact table format, for a
 			variable length field, an SQL NULL will use zero
 			bytes in the offset array at the start of the physical
@@ -467,7 +468,13 @@ row_upd_changes_field_size_or_external(
 			use one byte! Thus, we cannot use update-in-place
 			if we update an SQL NULL varchar to an empty string! */
 
-			old_len = UNIV_SQL_NULL;
+			    old_len = UNIV_SQL_NULL;
+            }
+            else if (rec_offs_nth_default(offsets, upd_field->field_no))
+            {
+                old_len = UNIV_SQL_DEFAULT;
+            }
+            
 		}
 
 		if (dfield_is_ext(new_val) || old_len != new_len
@@ -539,7 +546,8 @@ row_upd_rec_in_place(
 		if (dfield_is_ext(new_val)) {
 			ulint	len;
 			field_ref = rec_get_nth_field(rec, offsets, i, &len);
-			ut_a(len != UNIV_SQL_NULL);
+            /* 行外字段不可能含默认值 */
+			ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 			ut_a(len >= BTR_EXTERN_FIELD_REF_SIZE);
 			field_ref += len - BTR_EXTERN_FIELD_REF_SIZE;
 
@@ -692,6 +700,8 @@ row_upd_index_write_log(
 		log_ptr += mach_write_compressed(log_ptr, upd_field->field_no);
 		log_ptr += mach_write_compressed(log_ptr, len);
 
+        ut_ad(len != UNIV_SQL_DEFAULT);
+
 		if (len != UNIV_SQL_NULL) {
 			if (log_ptr + len < buf_end) {
 				memcpy(log_ptr, dfield_get_data(new_val), len);
@@ -773,6 +783,8 @@ row_upd_index_parse(
 			return(NULL);
 		}
 
+        ut_ad(len != UNIV_SQL_DEFAULT);
+
 		if (len != UNIV_SQL_NULL) {
 
 			if (end_ptr < ptr + len) {
@@ -832,6 +844,7 @@ row_upd_build_sec_rec_difference_binary(
 	for (i = 0; i < dtuple_get_n_fields(entry); i++) {
 
 		data = rec_get_nth_field(rec, offsets, i, &len);
+        ut_ad(len != UNIV_SQL_DEFAULT);
 
 		dfield = dtuple_get_nth_field(entry, i);
 
@@ -908,6 +921,10 @@ row_upd_build_difference_binary(
 	for (i = 0; i < dtuple_get_n_fields(entry); i++) {
 
 		data = rec_get_nth_field(rec, offsets, i, &len);
+        
+        /* 如果更新插入默认值列，总认为默认值列被更新 */
+        //if (len == UNIV_SQL_DEFAULT)
+        //    data = dict_index_get_nth_col_def(index, i, &len);
 
 		dfield = dtuple_get_nth_field(entry, i);
 
@@ -1464,6 +1481,7 @@ void
 row_upd_copy_columns(
 /*=================*/
 	rec_t*		rec,	/*!< in: record in a clustered index */
+    const dict_index_t*         index,
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
 	sym_node_t*	column)	/*!< in: first column in a column list, or
 				NULL */
@@ -1475,6 +1493,8 @@ row_upd_copy_columns(
 		data = rec_get_nth_field(rec, offsets,
 					 column->field_nos[SYM_CLUST_FIELD_NO],
 					 &len);
+        if (len == UNIV_SQL_DEFAULT) 
+            data = (byte*)dict_index_get_nth_col_def(index, column->field_nos[SYM_CLUST_FIELD_NO], &len);
 		eval_node_copy_and_alloc_val(column, data, len);
 
 		column = UT_LIST_GET_NEXT(col_var_list, column);
@@ -1773,7 +1793,7 @@ row_upd_clust_rec_by_insert_inherit_func(
 			const byte* rec_data
 				= rec_get_nth_field(rec, offsets, i, &len);
 			ut_ad(len == dfield_get_len(dfield));
-			ut_ad(len != UNIV_SQL_NULL);
+			ut_ad(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 			ut_ad(len >= BTR_EXTERN_FIELD_REF_SIZE);
 
 			rec_data += len - BTR_EXTERN_FIELD_REF_SIZE;
@@ -1788,7 +1808,7 @@ row_upd_clust_rec_by_insert_inherit_func(
 #endif /* UNIV_DEBUG */
 
 		len = dfield_get_len(dfield);
-		ut_a(len != UNIV_SQL_NULL);
+		ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 		ut_a(len >= BTR_EXTERN_FIELD_REF_SIZE);
 		data = dfield_get_data(dfield);
 		data += len - BTR_EXTERN_FIELD_REF_SIZE;
@@ -2261,7 +2281,7 @@ exit_func:
 	if (UNIV_UNLIKELY(!node->in_mysql_interface)) {
 		/* Copy the necessary columns from clust_rec and calculate the
 		new values to set */
-		row_upd_copy_columns(rec, offsets,
+		row_upd_copy_columns(rec, index, offsets,
 				     UT_LIST_GET_FIRST(node->columns));
 		row_upd_eval_new_vals(node->update);
 	}
