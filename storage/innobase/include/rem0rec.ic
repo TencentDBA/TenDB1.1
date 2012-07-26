@@ -35,8 +35,10 @@ Created 5/30/1994 Heikki Tuuri
 #define REC_OFFS_SQL_NULL	((ulint) 1 << 31)
 /* External flag in offsets returned by rec_get_offsets() */
 #define REC_OFFS_EXTERNAL	((ulint) 1 << 30)
+/* Default flag in offsets returned by rec_get_offsets() */
+#define REC_OFFS_DEFAULT	((ulint) 1 << 29)
 /* Mask for offsets returned by rec_get_offsets() */
-#define REC_OFFS_MASK		(REC_OFFS_EXTERNAL - 1)
+#define REC_OFFS_MASK		(REC_OFFS_DEFAULT - 1)
 
 /* Offsets of the bit-fields in an old-style record. NOTE! In the table the
 most significant bytes and bits are written below less significant.
@@ -1074,8 +1076,7 @@ rec_get_nth_field_offs(
 /*===================*/
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
 	ulint		n,	/*!< in: index of the field */
-	ulint*		len)	/*!< out: length of the field; UNIV_SQL_NULL
-				if SQL null */
+	ulint*		len)	/*!< out: length of the field; UNIV_SQL_NULL if SQL null; UNIV_SQL_DEFAULT if default value */
 {
 	ulint	offs;
 	ulint	length;
@@ -1092,7 +1093,10 @@ rec_get_nth_field_offs(
 
 	if (length & REC_OFFS_SQL_NULL) {
 		length = UNIV_SQL_NULL;
-	} else {
+	} 
+    else if (length & REC_OFFS_DEFAULT) {
+		length = UNIV_SQL_DEFAULT;
+	}else {
 		length &= REC_OFFS_MASK;
 		length -= offs;
 	}
@@ -1127,6 +1131,20 @@ rec_offs_any_extern(
 {
 	ut_ad(rec_offs_validate(NULL, NULL, offsets));
 	return(UNIV_UNLIKELY(*rec_offs_base(offsets) & REC_OFFS_EXTERNAL));
+}
+
+/******************************************************//**
+Determine if the offsets are for a record containing
+default value stored columns.
+@return	nonzero if default value stored */
+UNIV_INLINE
+ulint
+rec_offs_any_default(
+/*================*/
+	const ulint*	offsets)/*!< in: array returned by rec_get_offsets() */
+{
+	ut_ad(rec_offs_validate(NULL, NULL, offsets));
+	return(UNIV_UNLIKELY(*rec_offs_base(offsets) & REC_OFFS_DEFAULT));
 }
 
 #ifdef UNIV_BLOB_NULL_DEBUG
@@ -1181,6 +1199,22 @@ rec_offs_nth_extern(
 	ut_ad(n < rec_offs_n_fields(offsets));
 	return(UNIV_UNLIKELY(rec_offs_base(offsets)[1 + n]
 			     & REC_OFFS_EXTERNAL));
+}
+
+/******************************************************//**
+Returns nonzero if the default bit is set in nth field of rec.
+@return	nonzero if default bit is set */
+UNIV_INLINE
+ulint
+rec_offs_nth_default(
+/*================*/
+	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
+	ulint		n)	/*!< in: nth field */
+{
+	ut_ad(rec_offs_validate(NULL, NULL, offsets));
+	ut_ad(n < rec_offs_n_fields(offsets));
+	return(UNIV_UNLIKELY(rec_offs_base(offsets)[1 + n]
+			     & REC_OFFS_DEFAULT));
 }
 
 /******************************************************//**
@@ -1427,7 +1461,7 @@ rec_set_nth_field(
 	ulint		n,	/*!< in: index number of the field */
 	const void*	data,	/*!< in: pointer to the data
 				if not SQL null */
-	ulint		len)	/*!< in: length of the data or UNIV_SQL_NULL */
+	ulint		len)	/*!< in: length of the data or UNIV_SQL_NULL, impossiable UNIV_SQL_DEFAULT */
 {
 	byte*	data2;
 	ulint	len2;
@@ -1450,6 +1484,7 @@ rec_set_nth_field(
 		rec_set_nth_field_null_bit(rec, n, FALSE);
 		ut_ad(len == rec_get_nth_field_size(rec, n));
 	} else {
+        ut_ad(len != UNIV_SQL_DEFAULT);
 		ut_ad(len2 == len);
 	}
 
@@ -1525,7 +1560,7 @@ rec_offs_extra_size(
 {
 	ulint	size;
 	ut_ad(rec_offs_validate(NULL, NULL, offsets));
-	size = *rec_offs_base(offsets) & ~(REC_OFFS_COMPACT | REC_OFFS_EXTERNAL);
+	size = *rec_offs_base(offsets) & ~(REC_OFFS_COMPACT | REC_OFFS_EXTERNAL | REC_OFFS_DEFAULT);
 	ut_ad(size < UNIV_PAGE_SIZE);
 	return(size);
 }
@@ -1749,14 +1784,16 @@ rec_fold(
 					fields to fold */
 	ulint		n_bytes,	/*!< in: number of bytes to fold
 					in an incomplete last field */
-	index_id_t	tree_id)	/*!< in: index tree id */
+	const dict_index_t*   index)	/*!< in: index */
 {
 	ulint		i;
 	const byte*	data;
 	ulint		len;
 	ulint		fold;
 	ulint		n_fields_rec;
+    index_id_t	tree_id;
 
+    ut_a(index);
 	ut_ad(rec_offs_validate(rec, NULL, offsets));
 	ut_ad(rec_validate(rec, offsets));
 	ut_ad(n_fields + n_bytes > 0);
@@ -1773,10 +1810,14 @@ rec_fold(
 		n_bytes = 0;
 	}
 
+    tree_id = index->id;
+
 	fold = ut_fold_ull(tree_id);
 
 	for (i = 0; i < n_fields; i++) {
 		data = rec_get_nth_field(rec, offsets, i, &len);
+        if (len == UNIV_SQL_DEFAULT)
+            data = dict_index_get_nth_col_def(index, i, &len);
 
 		if (len != UNIV_SQL_NULL) {
 			fold = ut_fold_ulint_pair(fold,
@@ -1786,6 +1827,8 @@ rec_fold(
 
 	if (n_bytes > 0) {
 		data = rec_get_nth_field(rec, offsets, i, &len);
+        if (len == UNIV_SQL_DEFAULT)
+            data = dict_index_get_nth_col_def(index, i, &len);
 
 		if (len != UNIV_SQL_NULL) {
 			if (len > n_bytes) {

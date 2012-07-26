@@ -939,6 +939,27 @@ dict_index_get_nth_field(
 #else /* UNIV_DEBUG */
 # define dict_index_get_nth_field(index, pos) ((index)->fields + (pos))
 #endif /* UNIV_DEBUG */
+
+/********************************************************************//**
+@return	default value and get length*/
+UNIV_INLINE
+const byte*
+dict_index_get_nth_col_def(
+/*===================*/
+	const dict_index_t*	index,	/*!< in: index */
+	ulint			pos,	/*!< in: position of the field */
+    ulint*          len
+);
+
+const byte*
+dict_index_get_nth_col_def_with_heap(
+/*===================*/
+	const dict_index_t*	index,	/*!< in: index */
+	ulint			pos,	/*!< in: position of the field */
+    ulint*          len,
+    mem_heap_t*     heap,
+    ibool           use_heap
+);
 /********************************************************************//**
 Gets pointer to the nth column in an index.
 @return	column */

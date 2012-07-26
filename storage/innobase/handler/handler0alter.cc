@@ -177,6 +177,9 @@ null_field:
 			goto null_field;
 		}
 
+        if (ilen == UNIV_SQL_DEFAULT)
+            ifield = dict_index_get_nth_col_def(index, ipos, &ilen);
+
 		field->set_notnull();
 
 		innobase_col_to_mysql(

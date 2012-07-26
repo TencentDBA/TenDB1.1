@@ -230,8 +230,18 @@ dict_mem_table_add_col_default(
     ulint                   def_val_len
 )
 {
+
     ut_ad(table && col && heap && def_val && def_val_len > 0);
     ut_ad(!dict_col_is_nullable(col));
+
+#ifdef UNIV_DEBUG
+    {
+        ulint               fixed_size;
+        fixed_size = dict_col_get_fixed_size(col, 1);
+        ut_ad(fixed_size == 0 || fixed_size == def_val_len);
+    }
+#endif // _DEBUG
+
 
     col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
     col->def_val->col = col;

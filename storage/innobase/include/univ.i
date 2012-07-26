@@ -417,6 +417,7 @@ on disk, we must have also this number fit in 32 bits, also in 64-bit
 computers! */
 
 #define UNIV_SQL_NULL ULINT32_UNDEFINED
+#define UNIV_SQL_DEFAULT	0xFFFFFFFE
 
 /* Lengths which are not UNIV_SQL_NULL, but bigger than the following
 number indicate that a field contains a reference to an externally

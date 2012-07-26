@@ -313,6 +313,7 @@ rec_init_offsets_comp_ordinary(
     ulint       j       = 0;
 	ulint		offs		= 0;
 	ulint		any_ext		= 0;
+    ulint       any_def     = 0;
 	byte*	    nulls		= NULL;
 	byte*	    lens		= NULL;
 	dict_field_t*	field;
@@ -410,7 +411,14 @@ rec_init_offsets_comp_ordinary(
         if (i >= field_count_for_gcs)
         {
             //TO DO NOT NULL Ä¬ÈÏÖµ
+
+            any_def = REC_OFFS_DEFAULT;
+
+            len = offs | REC_OFFS_DEFAULT;
+            goto resolved;
         }
+
+        ut_ad(!any_def);
 
 		if (UNIV_UNLIKELY(!field->fixed_len)) {
 			/* Variable-length field: read the length */
@@ -457,7 +465,7 @@ resolved:
 	} while (++i < rec_offs_n_fields(offsets));
 
 	*rec_offs_base(offsets)
-		= (rec - (lens + 1)) | REC_OFFS_COMPACT | any_ext;
+		= (rec - (lens + 1)) | REC_OFFS_COMPACT | any_ext | any_def;
 }
 
 /******************************************************//**
@@ -1543,6 +1551,7 @@ rec_copy_prefix_to_dtuple(
 						to copy */
 	mem_heap_t*		heap)		/*!< in: memory heap */
 {
+    const dict_col_t*     col = NULL;
 	ulint	i;
 	ulint	offsets_[REC_OFFS_NORMAL_SIZE];
 	ulint*	offsets	= offsets_;
@@ -1563,6 +1572,8 @@ rec_copy_prefix_to_dtuple(
 
 		field = dtuple_get_nth_field(tuple, i);
 		data = rec_get_nth_field(rec, offsets, i, &len);
+        if (len == UNIV_SQL_DEFAULT)
+            data = dict_index_get_nth_col_def(index, i, &len);
 
 		if (len != UNIV_SQL_NULL) {
 			dfield_set_data(field,
@@ -1861,7 +1872,7 @@ rec_validate(
 	for (i = 0; i < n_fields; i++) {
 		data = rec_get_nth_field(rec, offsets, i, &len);
 
-		if (!((len < UNIV_PAGE_SIZE) || (len == UNIV_SQL_NULL))) {
+		if (!((len < UNIV_PAGE_SIZE) || (len == UNIV_SQL_NULL) || (len == UNIV_SQL_DEFAULT))) {
 			fprintf(stderr,
 				"InnoDB: Error: record field %lu len %lu\n",
 				(ulong) i,
@@ -1869,7 +1880,7 @@ rec_validate(
 			return(FALSE);
 		}
 
-		if (len != UNIV_SQL_NULL) {
+		if (len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT) {
 			len_sum += len;
 			sum += *(data + len -1); /* dereference the
 						 end of the field to
@@ -1971,7 +1982,16 @@ rec_print_comp(
 
 		fprintf(file, " %lu:", (ulong) i);
 
-		if (len != UNIV_SQL_NULL) {
+		if (len == UNIV_SQL_NULL) 
+        {
+			fputs(" SQL NULL", file);
+        } 
+        else if (len == UNIV_SQL_DEFAULT) 
+        {
+			fputs(" SQL DEFAULT", file);
+        }
+        else 
+        {
 			if (len <= 30) {
 
 				ut_print_buf(file, data, len);
@@ -1981,9 +2001,7 @@ rec_print_comp(
 				fprintf(file, " (total %lu bytes)",
 					(ulong) len);
 			}
-		} else {
-			fputs(" SQL NULL", file);
-		}
+		} 
 		putc(';', file);
 		putc('\n', file);
 	}

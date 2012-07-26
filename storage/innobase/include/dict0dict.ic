@@ -788,6 +788,50 @@ dict_index_get_nth_col(
 {
 	return(dict_field_get_col(dict_index_get_nth_field(index, pos)));
 }
+/********************************************************************//**
+@return	default value and get length*/
+UNIV_INLINE
+const byte*
+dict_index_get_nth_col_def(
+/*===================*/
+	const dict_index_t*	index,	/*!< in: index */
+	ulint			pos,	/*!< in: position of the field */
+    ulint*          len
+)
+{
+    const dict_col_t*       col;
+
+    col = dict_index_get_nth_col(index, pos);
+
+    ut_ad(col->def_val);
+
+    *len = col->def_val->def_val_len;
+
+    return col->def_val->def_val;
+}
+
+const byte*
+dict_index_get_nth_col_def_with_heap(
+/*===================*/
+	const dict_index_t*	index,	/*!< in: index */
+	ulint			pos,	/*!< in: position of the field */
+    ulint*          len,
+    mem_heap_t*     heap,
+    ibool           use_heap
+)
+{
+    const dict_col_t*       col;
+
+    ut_ad(!use_heap || heap);
+
+    col = dict_index_get_nth_col(index, pos);
+
+    ut_ad(col->def_val);
+
+    *len = col->def_val->def_val_len;
+
+    return use_heap ? mem_heap_dup(heap, col->def_val->def_val, (*len)) : col->def_val->def_val;
+}
 
 /********************************************************************//**
 Gets the column number the nth field in an index.
