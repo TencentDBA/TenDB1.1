@@ -220,34 +220,12 @@ dict_mem_table_add_col(
 	dict_mem_fill_column_struct(col, i, mtype, prtype, len);
 }
 
-UNIV_INTERN
 void
-dict_mem_table_add_col_default(
-    dict_table_t*           table,
-    dict_col_t*             col,
-    mem_heap_t*             heap,
-    const char*             def_val,
-    ulint                   def_val_len
+dict_mem_table_add_col_default_low(
+   dict_col_t*          col                                    
 )
 {
-
-    ut_ad(table && col && heap && def_val && def_val_len > 0);
-    ut_ad(!dict_col_is_nullable(col));
-
-#ifdef UNIV_DEBUG
-    {
-        ulint               fixed_size;
-        fixed_size = dict_col_get_fixed_size(col, 1);
-        ut_ad(fixed_size == 0 || fixed_size == def_val_len);
-    }
-#endif // _DEBUG
-
-
-    col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
-    col->def_val->col = col;
-    col->def_val->def_val_len = def_val_len;
-    col->def_val->def_val = mem_heap_strdupl(heap, def_val, def_val_len);
-
+    ut_ad(col->def_val);
     switch (col->mtype)
     {
     case DATA_VARCHAR:
@@ -262,17 +240,17 @@ dict_mem_table_add_col_default(
         break;
 
     case DATA_INT:
-        ut_ad(def_val_len == 4);
+        ut_ad(col->def_val->def_val_len == 4);
         col->def_val->real_val.int_val = mach_read_from_4(col->def_val->def_val);
         break;
 
     case DATA_FLOAT:
-        ut_ad(def_val_len == sizeof(float));
+        ut_ad(col->def_val->def_val_len == sizeof(float));
         col->def_val->real_val.float_val = mach_float_read(col->def_val->def_val);
         break;
 
     case DATA_DOUBLE:
-        ut_ad(def_val_len == sizeof(double));
+        ut_ad(col->def_val->def_val_len == sizeof(double));
         col->def_val->real_val.double_val = mach_double_read(col->def_val->def_val);
         break;
 
@@ -282,9 +260,70 @@ dict_mem_table_add_col_default(
         ut_a(0);
         break;
     }
-
 }
 
+UNIV_INTERN
+void
+dict_mem_table_add_col_default(
+    dict_table_t*           table,
+    dict_col_t*             col,
+    mem_heap_t*             heap,
+    const char*             def_val,
+    ulint                   def_val_len
+)
+{
+    ut_ad(table && col && heap && def_val && def_val_len > 0);
+    ut_ad(!dict_col_is_nullable(col));
+
+#ifdef UNIV_DEBUG
+    {
+        ulint               fixed_size;
+        fixed_size = dict_col_get_fixed_size(col, 1);
+        ut_ad(fixed_size == 0 || fixed_size == def_val_len);
+    }
+#endif // _DEBUG
+
+    col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
+    col->def_val->col = col;
+    col->def_val->def_val_len = def_val_len;
+    col->def_val->def_val = mem_heap_strdupl(heap, def_val, def_val_len);
+
+    dict_mem_table_add_col_default_low(col);
+}
+
+/* 设置列的默认值，字符型内容为空格，其他都是0x00, 用于redo */
+UNIV_INTERN
+void
+dict_mem_table_set_col_default(
+    dict_table_t*           table,
+    dict_col_t*             col,
+    mem_heap_t*             heap
+)
+{
+    ulint       fixed_size = 0;
+    ulint       def_val_len = 0;
+
+    ut_ad(!dict_col_is_nullable(col));
+    ut_ad(dict_table_is_gcs_after_alter_table(table));
+
+    fixed_size = dict_col_get_fixed_size(col, dict_table_is_comp(table));
+
+    /* 变长字段只用一个字节 */
+    def_val_len = fixed_size ? fixed_size : 1;
+
+    col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
+    col->def_val->col = col;
+    col->def_val->def_val_len = def_val_len;
+    /* 分配空间，同时初始化为0 */
+    col->def_val->def_val = mem_heap_zalloc(heap, def_val_len + 1);
+
+    /* 对于字符类型，默认都是空格 */
+    if(dtype_is_string_type(col->mtype)) 
+        memset(col->def_val->def_val, ' ', def_val_len);
+
+    dict_mem_table_add_col_default_low(col);
+
+}
 /**********************************************************************//**
 This function populates a dict_col_t memory structure with
 supplied information. */

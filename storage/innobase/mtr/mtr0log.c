@@ -591,7 +591,7 @@ mlog_parse_index(
             ut_ad(n_fields_before_alter < n && n_fields_before_alter > 0);
             ptr += 2;
 
-            /* 确保地址有效！ */
+            /* 确保地址有效！*/
             if (end_ptr < ptr + 2) {
                 return(NULL);
             }
@@ -629,6 +629,17 @@ mlog_parse_index(
 				? DATA_BINARY : DATA_FIXBINARY,         /* 若len 为0或0x7fff，可认为是变长字段；否则是定长字段 */
 				len & 0x8000 ? DATA_NOT_NULL : 0,
 				len & 0x7fff);
+
+            if (is_gcs && n_fields_before_alter > 0 && n_fields_before_alter <= i)
+            {
+                dict_col_t*     col = NULL;
+
+                col = dict_table_get_nth_col(table, i);
+
+                /* 添加默认值信息，但只是占位符，并不需真正的默认值信息 */
+                if (!dict_col_is_nullable(col))
+                    dict_mem_table_set_col_default(table, col, table->heap);
+            }
 
 			dict_index_add_col(ind, table,
 					   dict_table_get_nth_col(table, i),

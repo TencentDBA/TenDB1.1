@@ -184,6 +184,13 @@ dict_mem_table_add_col_default(
     const char*             def_val,
     ulint                   def_val_len
 );
+UNIV_INTERN
+void
+dict_mem_table_set_col_default(
+    dict_table_t*           table,
+    dict_col_t*             col,
+    mem_heap_t*             heap
+);
 /**********************************************************************//**
 This function populates a dict_col_t memory structure with
 supplied information. */
