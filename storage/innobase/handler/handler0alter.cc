@@ -1422,6 +1422,104 @@ static const Alter_inplace_info::HA_ALTER_FLAGS INNOBASE_ONLINE_OPERATIONS
 | Alter_inplace_info::ALTER_COLUMN_NAME_FLAG;
 
 
+/*******************************************************************//**
+Get field default value from frm's default value record
+@return	DB_SUCCESS or DB_ERROR number */
+ulint 
+get_field_def_value_from_frm(
+    Field   *field,    
+    char    *def,
+    uint    *def_length,
+    TABLE   *table ,
+    Alter_inplace_info  *inplace_info,
+    dict_col_t          *col,
+    dict_table_t        *dct_table){
+        DBUG_ENTER("get_field_def_value_from_frm");
+
+        uchar*     default_ptr = table->s->default_values;
+        ut_ad(default_ptr != NULL && def != NULL);        
+        
+        Alter_info *alter_info  = (Alter_info *)inplace_info->alter_info;
+        HA_CREATE_INFO *create_info = inplace_info->create_info;        
+        List_iterator<Create_field> def_it(alter_info->create_list);
+
+        //table fields == create_list.element.
+        ut_ad(alter_info->create_list.elements == table->s->fields);                  
+     
+        Field **    pf;
+        Field *     p_field;         
+        ulong       data_offset;
+        uint        copy_length;
+        unsigned char   *pos;
+        Create_field *  c_field;
+
+        // 1.compute the record off set (need to judge the create_info->table_options or not?)
+        data_offset = (create_info->null_bits + 7) / 8;
+        pf=table->field;
+
+        // 2.get the field default value
+        while(c_field = def_it++){
+            ut_ad(*pf);
+            p_field=*pf;
+            pf++;            
+
+            if(p_field == field)
+            {             
+                pos = default_ptr+c_field->offset+data_offset;
+
+                dfield_t		dfield;
+                const dtype_t*	dtype;
+                ulint           type;
+                unsigned char buff[5];
+
+                dict_col_copy_type(col,dfield_get_type(&dfield));
+                dtype  = dfield_get_type(&dfield);
+                type   = dtype->mtype;
+
+                /*
+                    if the field is VARCHAR/VARMYSQL/BINARY,the start copy pos should get rid of the length's byte(1 or 2)
+                    the pack_length is 2-256 258+
+                */
+                if( type == DATA_VARCHAR   || 
+                    type == DATA_VARMYSQL  ||
+                    type == DATA_BINARY
+                    ){                  
+                    char * def_val = (char *) my_malloc(c_field->def->max_length,MYF(MY_WME));
+                    String mstr(def_val,c_field->def->max_length,c_field->def->default_charset()); 
+
+                    String *tstr=&mstr;
+                    const char *well_formed_error_pos;
+                    const char *cannot_convert_error_pos;
+                    const char *from_end_pos;
+
+                    tstr = c_field->def->val_str(tstr);
+                    copy_length = well_formed_copy_nchars(c_field->charset,def_val,c_field->def->max_length,c_field->def->default_charset(),
+                        tstr->ptr(),tstr->length(),tstr->length(),&well_formed_error_pos,&cannot_convert_error_pos,&from_end_pos);
+                    my_free(def_val);                    
+                }else{
+                    //ut_ad(0);
+                    /* here we should use the pack_length */
+
+                    copy_length = c_field->pack_length;
+                }  
+
+                row_mysql_store_col_in_innobase_format(&dfield,(unsigned char *)&buff,TRUE,
+                    pos,copy_length,dict_table_is_comp(dct_table));
+
+                ut_ad(copy_length);
+
+                memcpy(def,dfield.data,copy_length);
+                *def_length = copy_length;
+
+                DBUG_RETURN(DB_SUCCESS);
+            } 
+        }
+        DBUG_PRINT("warn",("Cannot find the givin Field!"));
+
+        DBUG_RETURN(DB_ERROR);
+}
+
+
 ulint
 innodbase_fill_col_info(
     trx_t               *trx,
@@ -1429,7 +1527,9 @@ innodbase_fill_col_info(
     dict_table_t        *table,
     TABLE               *tmp_table,
     ulint               field_idx,
-    mem_heap_t*         heap
+    mem_heap_t*         heap,
+    Create_field *      cfield,
+    Alter_inplace_info* inplace_info
 )
 {
     ulint		col_type;
@@ -1538,31 +1638,18 @@ innodbase_fill_col_info(
 
     if (!dict_col_is_nullable(col))
     {
-        //TODO(GCS) : set default value，考虑大小端问题
-
-        /* 测试代码 */
-        byte*       def_val;
-        int         tmp = 0;
-        ulint       def_val_len = 0;
-
-        def_val = (byte*)&tmp;
-        if (col->mtype == DATA_INT)
-        {
-            mach_write_to_4(def_val, 0);
-            def_val_len = 4;
+        //TODO(GCS) : set default value，考虑大小端问题  done    
+      
+        /* 测试代码 */     
+      
+        char *buff = (char *) mem_heap_alloc(heap,8000);     
+        uint defleng;
+        error=get_field_def_value_from_frm(field,buff,(uint *)&defleng,tmp_table,inplace_info,col,table);
+        if(error!=DB_SUCCESS){
+            my_free(buff);
+            goto err_exit;
         }
-        else if (col->mtype == DATA_VARCHAR)
-        {
-            memset(def_val, 'a', 4);
-            def_val_len = 4;
-        }
-        else
-        {
-            ut_ad(0);
-        }
-        /* 测试代码 */
-
-        dict_mem_table_add_col_default(table, col, heap, (char*)def_val, def_val_len);
+        dict_mem_table_add_col_default(table, col, heap, (char*)buff,defleng);       
     }
     
 err_exit:
@@ -1850,7 +1937,7 @@ innobase_add_columns_simple(
 
             field = tmp_table->field[idx];
 
-            error_no = innodbase_fill_col_info(trx, &col_arr[idx], table, tmp_table, idx, heap);
+            error_no = innodbase_fill_col_info(trx, &col_arr[idx], table, tmp_table, idx, heap,cfield,inplace_info);
             if (error_no != DB_SUCCESS)
                 goto err_exit;
 

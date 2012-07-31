@@ -231,22 +231,29 @@ dict_mem_table_add_col_default(
 )
 {
 
+    ulint               fixed_size;
+    fixed_size = dict_col_get_fixed_size(col, 1);
+
     ut_ad(table && col && heap && def_val && def_val_len > 0);
-    ut_ad(!dict_col_is_nullable(col));
+    ut_ad(!dict_col_is_nullable(col));    
 
 #ifdef UNIV_DEBUG
     {
-        ulint               fixed_size;
-        fixed_size = dict_col_get_fixed_size(col, 1);
-        ut_ad(fixed_size == 0 || fixed_size == def_val_len);
+        //ulint               fixed_size;
+        //fixed_size = dict_col_get_fixed_size(col, 1);     
+        ut_ad(fixed_size == 0 || fixed_size == def_val_len);        
     }
 #endif // _DEBUG
 
 
     col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
     col->def_val->col = col;
+
+    /* 赋值的时候,将获取的固定长度赋给def_val_len */
+    
     col->def_val->def_val_len = def_val_len;
     col->def_val->def_val = mem_heap_strdupl(heap, def_val, def_val_len);
+
 
     switch (col->mtype)
     {
@@ -262,8 +269,11 @@ dict_mem_table_add_col_default(
         break;
 
     case DATA_INT:
-        ut_ad(def_val_len == 4);
-        col->def_val->real_val.int_val = mach_read_from_4(col->def_val->def_val);
+        /*
+            TODO:(GCS) 此处可能INT为1-4个字节
+        */
+       // ut_ad(def_val_len == 4);
+        //col->def_val->real_val.int_val = mach_read_from_4(col->def_val->def_val);
         break;
 
     case DATA_FLOAT:

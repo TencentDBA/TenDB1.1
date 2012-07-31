@@ -5926,16 +5926,20 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     */
     if (add_column_simple_flag && inplace_info_out && alter_info->change_level == ALTER_TABLE_METADATA_ONLY && !thd->lex->ignore)
     {    
-		/* 判断是否为create like */
+        
+		/* 
+            注意: 此处inplace_info_out为一个指针,判断该指针的值是为了 判断是否为create table like调用
+        */
+
         bool                    support_flag = false;
+
         /* 进一步检查以下情况 
         
         1. 是否只有add column操作，根据alter_info->flags，以及其他列表是否为空等，不能指定任何的create_options, --done
-        2. 不能含默认值，注意时间类型的处理 --done
-        3. 是否临时表，分区表   --done
+        2. 允许包含默认值，注意时间类型的处理 --done
+        3. 临时表，分区表,带加索引的不支持   --done
         4. 调用存储引擎接口判断，只有innodb实现这个接口，其他必定为返回FALSE，存储引擎会判断是否为GCS表等。  --done 
         */
-
 
         /*
         NOTE: alter table t add column (id9 int,key(id9));
@@ -6862,6 +6866,8 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         error= trans_commit_stmt(thd);
         if (trans_commit_implicit(thd))
             error= 1;
+    }else{
+        /* inplace alter scene,process later */        
     }
     thd->count_cuted_fields= CHECK_FIELD_IGNORE;
 
@@ -7008,6 +7014,7 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         if (!thd->is_current_stmt_binlog_format_row() &&
             write_bin_log(thd, TRUE, thd->query(), thd->query_length()))
         {
+            /* donnot forget to free the inplace_info */
             if(inplace_info){
                 delete inplace_info;
                 inplace_info = NULL;
@@ -7031,7 +7038,9 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     DEBUG_SYNC(thd, "alter_table_before_rename_result_table");
 
     /*
-    Data is copied. Now we:
+    Data is copied,or table can do inplace alter table op.
+    Now we:
+    A.data coppied
     1) Wait until all other threads will stop using old version of table
     by upgrading shared metadata lock to exclusive one.
     2) Close instances of table open by this thread and replace them
@@ -7045,6 +7054,9 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     remove placeholders and release metadata locks.
     7) If we are not not under LOCK TABLES we rely on the caller
     (mysql_execute_command()) to release metadata locks.
+
+    B.table can do inplace alter table opration. 
+    now we can only do fast alter table add colum(s)
     */
 
     thd_proc_info(thd, "rename result table");
@@ -7090,7 +7102,8 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
 		/* note! here do not add the tmp_table to thread's temp table list */
         tmp_table_for_inplace = open_table_uncached(thd, filename, new_db, tmp_name, FALSE, false);
 		DBUG_ASSERT(tmp_table_for_inplace != NULL);
-
+        
+        /* innodb fast alter */
         if (mysql_inplace_alter_table(thd, table, tmp_table_for_inplace, inplace_info))
         {
             /* 错误处理，参考5.6 */			
@@ -7147,7 +7160,12 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
             if (mysql_rename_table(NULL, new_db, tmp_name, new_db,
                 new_alias, FN_FROM_IS_TMP))
             {
-                /* rename失败，临时frm还在 */				
+                /* 
+                rename失败，临时frm还在,但临时frm不要删除!
+                存在一种情况: 
+                当底层innodb快速alter成功,但mysql层rename失败,此时底层已经commit不能回滚,
+                这个时候临时文件其实保存了实际的frm记录,需要用作手动恢复用.
+                */				
                 error = 1;
             }
             goto end_inplace_alter;
