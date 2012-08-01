@@ -1433,7 +1433,8 @@ get_field_def_value_from_frm(
     TABLE   *table ,
     Alter_inplace_info  *inplace_info,
     dict_col_t          *col,
-    dict_table_t        *dct_table){
+    dict_table_t        *dct_table,
+    mem_heap_t*         heap){
         DBUG_ENTER("get_field_def_value_from_frm");
 
         uchar*     default_ptr = table->s->default_values;
@@ -1484,8 +1485,9 @@ get_field_def_value_from_frm(
                     type == DATA_VARMYSQL  ||
                     type == DATA_BINARY
                     ){                  
-                    char * def_val = (char *) my_malloc(c_field->def->max_length,MYF(MY_WME));
-                    String mstr(def_val,c_field->def->max_length,c_field->def->default_charset()); 
+                   // char * def_val = (char *)me(c_field->length,MYF(MY_WME));
+                    char * def_val = (char *) mem_heap_alloc(heap,c_field->length);
+                    String mstr(def_val,c_field->length,c_field->def->default_charset()); 
 
                     String *tstr=&mstr;
                     const char *well_formed_error_pos;
@@ -1493,9 +1495,9 @@ get_field_def_value_from_frm(
                     const char *from_end_pos;
 
                     tstr = c_field->def->val_str(tstr);
-                    copy_length = well_formed_copy_nchars(c_field->charset,def_val,c_field->def->max_length,c_field->def->default_charset(),
+                    copy_length = well_formed_copy_nchars(c_field->charset,def_val,c_field->length,c_field->def->default_charset(),
                         tstr->ptr(),tstr->length(),tstr->length(),&well_formed_error_pos,&cannot_convert_error_pos,&from_end_pos);
-                    my_free(def_val);                    
+                                     
                 }else{
                     //ut_ad(0);
                     /* here we should use the pack_length */
@@ -1638,15 +1640,15 @@ innodbase_fill_col_info(
 
     if (!dict_col_is_nullable(col))
     {
+
         //TODO(GCS) : set default value，考虑大小端问题  done    
       
         /* 测试代码 */     
       
         char *buff = (char *) mem_heap_alloc(heap,8000);     
         uint defleng;
-        error=get_field_def_value_from_frm(field,buff,(uint *)&defleng,tmp_table,inplace_info,col,table);
-        if(error!=DB_SUCCESS){
-            my_free(buff);
+        error=get_field_def_value_from_frm(field,buff,(uint *)&defleng,tmp_table,inplace_info,col,table,heap);
+        if(error!=DB_SUCCESS){           
             goto err_exit;
         }
         dict_mem_table_add_col_default(table, col, heap, (char*)buff,defleng);       
@@ -1938,6 +1940,7 @@ innobase_add_columns_simple(
             field = tmp_table->field[idx];
 
             error_no = innodbase_fill_col_info(trx, &col_arr[idx], table, tmp_table, idx, heap,cfield,inplace_info);
+
             if (error_no != DB_SUCCESS)
                 goto err_exit;
 
