@@ -332,6 +332,16 @@ dict_table_change_id_in_cache(
 /*==========================*/
 	dict_table_t*	table,	/*!< in/out: table object already in cache */
 	table_id_t	new_id);/*!< in: new id to set */
+
+/**********************************************************************//*
+Change the gcs flags of a table object in the dictionary cache. This is used in
+DISCARD TABLESPACE. */
+UNIV_INTERN
+void
+dict_table_change_gcs_flag_in_cache(
+/*==========================*/
+dict_table_t*	table	/*!< in/out: table object already in cache */);
+
 /**********************************************************************//**
 Adds a foreign key constraint object to the dictionary cache. May free
 the object if there already is an object with the same identifier in.

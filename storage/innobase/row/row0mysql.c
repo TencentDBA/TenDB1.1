@@ -2739,7 +2739,7 @@ row_truncate_table_for_mysql(
 	mtr_t		mtr;
 	table_id_t	new_id;
 	ulint		recreate_space = 0;
-	pars_info_t*	info = NULL;
+	pars_info_t*	info = NULL;  
 
 	/* How do we prevent crashes caused by ongoing operations on
 	the table? Old operations could try to access non-existent
@@ -2948,6 +2948,7 @@ row_truncate_table_for_mysql(
 		const byte*	field;
 		ulint		len;
 		ulint		root_page_no;
+        
 
 		if (!btr_pcur_is_on_user_rec(&pcur)) {
 			/* The end of SYS_INDEXES has been reached. */
@@ -3012,17 +3013,27 @@ next_rec:
 	pars_info_add_ull_literal(info, "old_id", table->id);
 	pars_info_add_ull_literal(info, "new_id", new_id);
 
+
+    /* aways set the mix_len as table->flags,include gcs */ 
+    pars_info_add_int4_literal(info, "mix_len",table->flags >> DICT_TF2_SHIFT);
+
+    /* recompute the n_col */
+    pars_info_add_int4_literal(info, "n_col",(table->n_def - DATA_N_SYS_COLS)|(1<<30)|(1<<31));
+
+
 	err = que_eval_sql(info,
 			   "PROCEDURE RENUMBER_TABLESPACE_PROC () IS\n"
 			   "BEGIN\n"
 			   "UPDATE SYS_TABLES"
-			   " SET ID = :new_id, SPACE = :space\n"
+			   " SET ID = :new_id, SPACE = :space, N_COLS = :n_col, MIX_LEN = :mix_len\n"
 			   " WHERE ID = :old_id;\n"
 			   "UPDATE SYS_COLUMNS SET TABLE_ID = :new_id\n"
 			   " WHERE TABLE_ID = :old_id;\n"
 			   "UPDATE SYS_INDEXES"
 			   " SET TABLE_ID = :new_id, SPACE = :space\n"
-			   " WHERE TABLE_ID = :old_id;\n"
+			   " WHERE TABLE_ID = :old_id;\n" 
+               "DELETE FROM SYS_ADDED_COLS_DEFAULT\n"
+               " WHERE TABLE_ID = :old_id;"
 			   "COMMIT WORK;\n"
 			   "END;\n"
 			   , FALSE, trx);
@@ -3041,6 +3052,9 @@ next_rec:
 		err = DB_ERROR;
 	} else {
 		dict_table_change_id_in_cache(table, new_id);
+
+        dict_table_change_gcs_flag_in_cache(table);
+        /*  */
 	}
 
 	/* Reset auto-increment. */
@@ -3310,6 +3324,8 @@ check_next_foreign:
 
 	pars_info_add_str_literal(info, "table_name", name);
 
+    /* drop table and clear the default values of fast added column in SYS_ADDED_COLS_DEFAULT
+    */
 	err = que_eval_sql(info,
 			   "PROCEDURE DROP_TABLE_PROC () IS\n"
 			   "sys_foreign_id CHAR;\n"
@@ -3384,6 +3400,8 @@ check_next_foreign:
 			   "WHERE TABLE_ID = table_id;\n"
 			   "DELETE FROM SYS_TABLES\n"
 			   "WHERE ID = table_id;\n"
+               "DELETE FROM SYS_ADDED_COLS_DEFAULT\n"
+               "WHERE TABLE_ID = table_id;"
 			   "END;\n"
 			   , FALSE, trx);
 

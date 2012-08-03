@@ -1228,6 +1228,21 @@ dict_table_change_id_in_cache(
 		    ut_fold_ull(table->id), table);
 }
 
+/**********************************************************************//*
+Change the gcs flags of a table object in the dictionary cache. This is used in
+DISCARD TABLESPACE. */
+UNIV_INTERN
+void
+dict_table_change_gcs_flag_in_cache(
+                              /*==========================*/
+                              dict_table_t*	table	/*!< in/out: table object already in cache */)
+{
+    ut_ad(table);
+    ut_ad(mutex_own(&(dict_sys->mutex)));   
+    table->n_cols_before_alter_table=0;
+    
+}
+
 /**********************************************************************//**
 Removes a table object from the dictionary cache. */
 UNIV_INTERN

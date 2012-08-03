@@ -813,15 +813,8 @@ dict_load_added_cols_default_for_gcs_low(
     ulint       long_def_len;
 
     ulint       offsets_[REC_OFFS_NORMAL_SIZE];
-    ulint *     offsets = offsets_;
-
-
-    ut_a(rec);
-    ut_ad(!col->def_val);
+    ulint       offs;
     
-    rec_offs_init(offsets_);
-
-    rec_get_offsets(rec,sys_index,offsets,ULINT_UNDEFINED,&heap);
 
     
 	if (UNIV_UNLIKELY(rec_get_deleted_flag(rec, 0))) {
@@ -865,7 +858,14 @@ err_len:
 
     /** TODO(GCS): ÐÐÍâ×Ö¶Î    **/
     /** process extral storage **/
-    if(UNIV_UNLIKELY(rec_offs_nth_extern(offsets,4/*DEF_VAL*/))){        
+    if(UNIV_UNLIKELY(rec_get_nth_field_offs_extern(rec,4/*DEF_VAL*/))){
+        ulint *     offsets = offsets_;
+        ut_a(rec);
+        ut_ad(!col->def_val);
+        rec_offs_init(offsets_);
+
+        rec_get_offsets(rec,sys_index,offsets,ULINT_UNDEFINED,&heap);
+
         long_def_val = btr_rec_copy_externally_stored_field(
             rec, offsets,
             0,

@@ -924,6 +924,22 @@ rec_get_nth_field_offs_old(
 	return(os);
 }
 
+/**********************************************************//*
+Determines if the nth field contain EXTERN parts
+*/
+UNIV_INTERN
+ulint
+rec_get_nth_field_offs_extern(
+    /*=======================*/
+    const rec_t*	rec,	/*!< in: record */
+    ulint		n	/*!< in: index of the field */){
+        if(rec_get_1byte_offs_flag(rec))
+            return 0;
+        return (rec_2_get_field_end_info(rec,n) & REC_2BYTE_EXTERN_MASK);
+}
+
+
+
 /**********************************************************//**
 Determines the size of a data tuple prefix in ROW_FORMAT=COMPACT.
 @return	total size */

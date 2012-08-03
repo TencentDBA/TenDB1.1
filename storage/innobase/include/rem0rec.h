@@ -145,6 +145,15 @@ ulint
 rec_get_n_fields_old(
 /*=================*/
 	const rec_t*	rec);	/*!< in: physical record */
+/**********************************************************//*
+Determines if the nth field contain EXTERN parts
+*/
+UNIV_INLINE
+ulint
+rec_get_nth_field_offs_extern(
+    /*=======================*/
+    const rec_t*	rec,	/*!< in: record */
+    ulint		n	/*!< in: index of the field */);
 /******************************************************//**
 The following function is used to get the number of fields
 in a record.
