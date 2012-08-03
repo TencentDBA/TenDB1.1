@@ -287,6 +287,9 @@ dict_mem_table_add_col_default(
     }
 #endif // _DEBUG
 
+    /*
+        这里开不出太大的空间!
+    */
     col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
     col->def_val->col = col;
     col->def_val->def_val_len = def_val_len;

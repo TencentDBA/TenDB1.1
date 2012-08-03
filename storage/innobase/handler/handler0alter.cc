@@ -1450,7 +1450,7 @@ get_field_def_value_from_frm(
         Field **    pf;
         Field *     p_field;         
         ulong       data_offset;
-        uint        copy_length;
+        ulint        copy_length;
         unsigned char   *pos;
         Create_field *  c_field;
 
@@ -1485,6 +1485,7 @@ get_field_def_value_from_frm(
                     type == DATA_VARMYSQL  ||
                     type == DATA_BINARY
                     ){                  
+                    /*
                    // char * def_val = (char *)me(c_field->length,MYF(MY_WME));
                     char * def_val = (char *) mem_heap_alloc(heap,c_field->length);
                     String mstr(def_val,c_field->length,c_field->def->default_charset()); 
@@ -1497,6 +1498,11 @@ get_field_def_value_from_frm(
                     tstr = c_field->def->val_str(tstr);
                     copy_length = well_formed_copy_nchars(c_field->charset,def_val,c_field->length,c_field->def->default_charset(),
                         tstr->ptr(),tstr->length(),tstr->length(),&well_formed_error_pos,&cannot_convert_error_pos,&from_end_pos);
+                    */
+
+                    ulint lenlen = c_field->length>255?2:1;
+                    unsigned char  *t=pos;
+                    row_mysql_read_true_varchar(&copy_length,t,lenlen);
                                      
                 }else{
                     //ut_ad(0);
@@ -1510,8 +1516,8 @@ get_field_def_value_from_frm(
 
                 ut_ad(copy_length);
 
-                memcpy(def,dfield.data,copy_length);
-                *def_length = copy_length;
+                memcpy(def,dfield.data,dfield.len);
+                *def_length = dfield.len;
 
                 DBUG_RETURN(DB_SUCCESS);
             } 
@@ -1643,9 +1649,9 @@ innodbase_fill_col_info(
 
         //TODO(GCS) : set default value，考虑大小端问题  done    
       
-        /* 测试代码 */     
+        /* 默认值不应该超过64k */     
       
-        char *buff = (char *) mem_heap_alloc(heap,8000);     
+        char *buff = (char *) mem_heap_alloc(heap,64000);     
         uint defleng;
         error=get_field_def_value_from_frm(field,buff,(uint *)&defleng,tmp_table,inplace_info,col,table,heap);
         if(error!=DB_SUCCESS){           
@@ -1817,6 +1823,7 @@ innobase_add_column_default_to_dictionary_for_gcs(
     pars_info_add_int4_literal(info, "pos", col->ind);
 
     //TODO(GCS) ,whether default value too big?
+    //confirmed. here devaut value is a pointer,never too big.as test 36k is OK.
     pars_info_add_binary_literal(info, "def_val", col->def_val->def_val, col->def_val->def_val_len);
     pars_info_add_int4_literal(info, "def_val_len", col->def_val->def_val_len);
 

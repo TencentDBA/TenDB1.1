@@ -800,7 +800,8 @@ dict_load_added_cols_default_for_gcs_low(
     dict_table_t*       table,
     dict_col_t*         col,
     mem_heap_t*	        heap,
-    rec_t*              rec
+    rec_t*              rec,
+    dict_index_t*       sys_index
 )
 {
     const char* def_val;
@@ -808,10 +809,21 @@ dict_load_added_cols_default_for_gcs_low(
     ulint		len;
     ulint		pos;
     const byte*	field;
+    const byte* long_def_val;
+    ulint       long_def_len;
+
+    ulint       offsets_[REC_OFFS_NORMAL_SIZE];
+    ulint *     offsets = offsets_;
+
 
     ut_a(rec);
     ut_ad(!col->def_val);
+    
+    rec_offs_init(offsets_);
 
+    rec_get_offsets(rec,sys_index,offsets,ULINT_UNDEFINED,&heap);
+
+    
 	if (UNIV_UNLIKELY(rec_get_deleted_flag(rec, 0))) {
 		return("delete-marked record in SYS_ADDED_COLS_DEFAULT");
 	}
@@ -850,14 +862,28 @@ err_len:
 		goto err_len;
 	}
 
-    /** TODO(GCS): 行外字段 **/
-	field = rec_get_nth_field_old(rec, 4/*DEF_VAL*/, &len);
-	if (UNIV_UNLIKELY(len == UNIV_SQL_NULL)) {
-		goto err_len;
-	}
 
-	def_val = field;
-    def_val_len = len;
+    /** TODO(GCS): 行外字段    **/
+    /** process extral storage **/
+    if(UNIV_UNLIKELY(rec_offs_nth_extern(offsets,4/*DEF_VAL*/))){        
+        long_def_val = btr_rec_copy_externally_stored_field(
+            rec, offsets,
+            0,
+            4/*DEF_VAL*/, &long_def_len, heap);
+        ut_ad(long_def_len);
+        ut_a(long_def_val);
+    }else{
+	    field = rec_get_nth_field_old(rec, 4/*DEF_VAL*/, &len);
+        if (UNIV_UNLIKELY(len == UNIV_SQL_NULL)) {
+            goto err_len;
+        }
+        long_def_val=field;
+        long_def_len = len;
+    }
+	
+
+	def_val = long_def_val;
+    def_val_len = long_def_len;
 
 	field = rec_get_nth_field_old(rec, 5/*DEF_VAL_LEN*/, &len);
 	if (UNIV_UNLIKELY(len != 4)) {
@@ -945,7 +971,7 @@ dict_load_added_cols_default_for_gcs(
         rec = btr_pcur_get_rec(&pcur);
         ut_a(btr_pcur_is_on_user_rec(&pcur));
 
-        err_msg = dict_load_added_cols_default_for_gcs_low(table, col, heap, rec);
+        err_msg = dict_load_added_cols_default_for_gcs_low(table, col, heap, rec, sys_index);
         if (err_msg) {
             fprintf(stderr, "InnoDB: %s\n", err_msg);
             ut_error;
