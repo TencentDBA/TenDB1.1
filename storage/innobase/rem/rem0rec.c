@@ -927,12 +927,11 @@ rec_get_nth_field_offs_old(
 /**********************************************************//*
 Determines if the nth field contain EXTERN parts
 */
-UNIV_INTERN
 ulint
 rec_get_nth_field_offs_extern_old(
     /*=======================*/
     const rec_t*	rec,	/*!< in: record */
-    ulint		n	/*!< in: index of the field */)
+    ulint		    n	/*!< in: index of the field */)
 {
     if(rec_get_1byte_offs_flag(rec))
         return 0;
@@ -1567,8 +1566,7 @@ rec_copy_prefix_to_dtuple(
 	ulint			n_fields,	/*!< in: number of fields
 						to copy */
 	mem_heap_t*		heap)		/*!< in: memory heap */
-{
-    const dict_col_t*     col = NULL;
+{   
 	ulint	i;
 	ulint	offsets_[REC_OFFS_NORMAL_SIZE];
 	ulint*	offsets	= offsets_;

@@ -961,6 +961,7 @@ dict_index_get_nth_col_def(
     ulint*          len
 );
 
+UNIV_INLINE
 const byte*
 dict_index_get_nth_col_def_with_heap(
 /*===================*/

@@ -221,50 +221,50 @@ dict_mem_table_add_col(
 }
 
 
-void
-dict_mem_table_add_col_default_low(
-   dict_col_t*          col                                    
-)
-{
-    ut_ad(col->def_val);
-    switch (col->mtype)
-    {
-    case DATA_VARCHAR:
-    case DATA_CHAR:
-    case DATA_BINARY:
-    case DATA_FIXBINARY:
-    case DATA_BLOB:
-    case DATA_MYSQL:
-    case DATA_DECIMAL:
-    case DATA_VARMYSQL:
-        col->def_val->real_val.var_val = col->def_val->def_val;
-        break;
-
-    case DATA_INT:
-        /*
-        TODO(GCS): int maybe in 1-4 byte.
-        */
-       // ut_ad(col->def_val->def_val_len == 4);
-      //  col->def_val->real_val.int_val = mach_read_from_4(col->def_val->def_val);
-        break;
-
-    case DATA_FLOAT:
-        ut_ad(col->def_val->def_val_len == sizeof(float));
-        col->def_val->real_val.float_val = mach_float_read(col->def_val->def_val);
-        break;
-
-    case DATA_DOUBLE:
-        ut_ad(col->def_val->def_val_len == sizeof(double));
-        col->def_val->real_val.double_val = mach_double_read(col->def_val->def_val);
-        break;
-
-    case DATA_SYS_CHILD:	/* address of the child page in node pointer */
-    case DATA_SYS:          /* system column */
-    default:
-        ut_a(0);
-        break;
-    }
-}
+//void
+//dict_mem_table_add_col_default_low(
+//   dict_col_t*          col                                    
+//)
+//{
+//    ut_ad(col->def_val);
+//    switch (col->mtype)
+//    {
+//    case DATA_VARCHAR:
+//    case DATA_CHAR:
+//    case DATA_BINARY:
+//    case DATA_FIXBINARY:
+//    case DATA_BLOB:
+//    case DATA_MYSQL:
+//    case DATA_DECIMAL:
+//    case DATA_VARMYSQL:
+//        col->def_val->real_val.var_val = col->def_val->def_val;
+//        break;
+//
+//    case DATA_INT:
+//        /*
+//        TODO(GCS): int maybe in 1-4 byte.
+//        */
+//       // ut_ad(col->def_val->def_val_len == 4);
+//      //  col->def_val->real_val.int_val = mach_read_from_4(col->def_val->def_val);
+//        break;
+//
+//    case DATA_FLOAT:
+//        ut_ad(col->def_val->def_val_len == sizeof(float));
+//        col->def_val->real_val.float_val = mach_float_read(col->def_val->def_val);
+//        break;
+//
+//    case DATA_DOUBLE:
+//        ut_ad(col->def_val->def_val_len == sizeof(double));
+//        col->def_val->real_val.double_val = mach_double_read(col->def_val->def_val);
+//        break;
+//
+//    case DATA_SYS_CHILD:	/* address of the child page in node pointer */
+//    case DATA_SYS:          /* system column */
+//    default:
+//        ut_a(0);
+//        break;
+//    }
+//}
 
 UNIV_INTERN
 void
@@ -272,7 +272,7 @@ dict_mem_table_add_col_default(
     dict_table_t*           table,             /* 注意，此table可能不可靠，此时table可能并没加入该列信息 */
     dict_col_t*             col,
     mem_heap_t*             heap,
-    const char*             def_val,
+    const byte*             def_val,
     ulint                   def_val_len
 )
 {
@@ -293,9 +293,9 @@ dict_mem_table_add_col_default(
     col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
     col->def_val->col = col;
     col->def_val->def_val_len = def_val_len;
-    col->def_val->def_val = mem_heap_strdupl(heap, def_val, def_val_len);
+    col->def_val->def_val = mem_heap_strdupl(heap, (char*)def_val, def_val_len);
 
-    dict_mem_table_add_col_default_low(col);
+   // dict_mem_table_add_col_default_low(col);
 }
 
 /* 设置列的默认值，字符型内容为空格，其他都是0x00, 用于redo */
@@ -328,7 +328,7 @@ dict_mem_table_set_col_default(
     if(dtype_is_string_type(col->mtype)) 
         memset(col->def_val->def_val, ' ', def_val_len);
 
-    dict_mem_table_add_col_default_low(col);
+   // dict_mem_table_add_col_default_low(col);
 
 }
 /**********************************************************************//**
@@ -561,7 +561,7 @@ dict_mem_table_add_col_simple(
     {
         if (table->cols[i].def_val)
         {
-            dict_mem_table_add_col_default(table, &table->cols[i], table->heap, table->cols[i].def_val->def_val, table->cols[i].def_val->def_val_len);
+            dict_mem_table_add_col_default(table, &table->cols[i], table->heap,table->cols[i].def_val->def_val, (ulint)table->cols[i].def_val->def_val_len);
         }
     }
 

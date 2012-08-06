@@ -1426,6 +1426,7 @@ static const Alter_inplace_info::HA_ALTER_FLAGS INNOBASE_ONLINE_OPERATIONS
 /*******************************************************************//**
 Get field default value from frm's default value record
 @return	DB_SUCCESS or DB_ERROR number */
+/*
 ulint 
 get_field_def_value_from_frm2(
     Field*              field,    
@@ -1496,7 +1497,7 @@ get_field_def_value_from_frm2(
 
     DBUG_RETURN(DB_ERROR);
 }
-
+*/
 ulint 
 get_field_def_value_from_frm(
     TABLE*              table,
@@ -1504,7 +1505,7 @@ get_field_def_value_from_frm(
     ulint               nth_fld,
     ibool               is_comp,
     mem_heap_t*         heap,
-    char**              def,                /* in/out */
+    byte**              def,                /* in/out */
     uint*               def_length         /* out */
 )
 {
@@ -1554,7 +1555,7 @@ get_field_def_value_from_frm(
     // maybe default value is ''
     ut_ad(dfield.len <= field->pack_length());
 
-    *def = (char*)mem_heap_dup(heap,dfield.data,dfield.len);
+    *def = (byte*)mem_heap_dup(heap,dfield.data,dfield.len);
     *def_length = dfield.len;
 
     DBUG_RETURN(DB_SUCCESS);
@@ -1680,7 +1681,7 @@ innodbase_fill_col_info(
     if (!dict_col_is_nullable(col))
     {
         /* blob column would get no default values */
-        char *buff = NULL;     
+        byte *  buff = NULL;     
         uint defleng = 0;
         //error=get_field_def_value_from_frm(field,buff,(uint *)&defleng,tmp_table,inplace_info,col,table,heap);
         error = get_field_def_value_from_frm(tmp_table, col, field_idx, dict_table_is_comp(table), heap, &buff, &defleng);
@@ -1698,6 +1699,8 @@ err_exit:
     由于默认值是多个不同类型，因此插入系统表中是使用二进制串形式
 
 */
+/*
+
 static
 char*
 get_default_hex_str(
@@ -1724,7 +1727,7 @@ get_default_hex_str(
 
     return (char*)buffer;
 }
-
+*/
 
 
 ulint
@@ -1915,7 +1918,6 @@ innobase_add_columns_simple(
     char*           col_name = NULL;
     ulint           lock_retry = 0;
     ibool           locked = FALSE;
-    ulint           n_cols_before_alter = 0;
 
     DBUG_ENTER("innobase_add_columns_simple");
 

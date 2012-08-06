@@ -810,6 +810,7 @@ dict_index_get_nth_col_def(
     return col->def_val->def_val;
 }
 
+UNIV_INLINE
 const byte*
 dict_index_get_nth_col_def_with_heap(
 /*===================*/
@@ -830,7 +831,7 @@ dict_index_get_nth_col_def_with_heap(
 
     *len = col->def_val->def_val_len;
 
-    return use_heap ? mem_heap_dup(heap, col->def_val->def_val, (*len)) : col->def_val->def_val;
+    return use_heap ? (byte*)mem_heap_dup(heap, col->def_val->def_val, (*len)) : col->def_val->def_val;
 }
 
 /********************************************************************//**

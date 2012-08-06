@@ -181,7 +181,7 @@ dict_mem_table_add_col_default(
     dict_table_t*           table,
     dict_col_t*             col,
     mem_heap_t*             heap,
-    const char*             def_val,
+    const byte*             def_val,
     ulint                   def_val_len
 );
 
@@ -294,13 +294,13 @@ struct dict_col_default_struct {
 
     dict_col_t*     col;
 
-    union un_element {
-        char*       var_val;        /* DATA_VARCHAR,DATA_CHAR,DATA_FIXBINARY,DATA_BINARY,DATA_BLOB */
-                                    /* DATA_DECIMAL,DATA_VARMYSQL,DATA_MYSQL */
-        ulint       int_val;        /* DATA_INT */
-        float       float_val;      /* DATA_FLOAT */
-        double      double_val;     /* DATA_DOUBLE */
-    } real_val;
+    //union un_element {
+    //    char*       var_val;        /* DATA_VARCHAR,DATA_CHAR,DATA_FIXBINARY,DATA_BINARY,DATA_BLOB */
+    //                                /* DATA_DECIMAL,DATA_VARMYSQL,DATA_MYSQL */
+    //    ulint       int_val;        /* DATA_INT */
+    //    float       float_val;      /* DATA_FLOAT */
+    //    double      double_val;     /* DATA_DOUBLE */
+    //} real_val;
 
     byte*           def_val;        /* ×ÜÒÔ\0½áÊø */
     //unsigned        def_val_len:16;

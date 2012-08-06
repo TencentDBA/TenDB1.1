@@ -148,7 +148,6 @@ rec_get_n_fields_old(
 /**********************************************************//*
 Determines if the nth field contain EXTERN parts
 */
-UNIV_INLINE
 ulint
 rec_get_nth_field_offs_extern_old(
     /*=======================*/

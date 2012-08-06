@@ -804,7 +804,7 @@ dict_load_added_cols_default_for_gcs_low(
     dict_index_t*       sys_index
 )
 {
-    const char* def_val;
+    const byte* def_val;
     ulint       def_val_len;
     ulint		len;
     ulint		pos;
