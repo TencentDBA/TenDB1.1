@@ -813,9 +813,6 @@ dict_load_added_cols_default_for_gcs_low(
     ulint       long_def_len;
 
     ulint       offsets_[REC_OFFS_NORMAL_SIZE];
-    ulint       offs;
-    
-
     
 	if (UNIV_UNLIKELY(rec_get_deleted_flag(rec, 0))) {
 		return("delete-marked record in SYS_ADDED_COLS_DEFAULT");

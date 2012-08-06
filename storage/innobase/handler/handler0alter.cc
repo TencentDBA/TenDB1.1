@@ -1514,7 +1514,8 @@ get_field_def_value_from_frm(
                 row_mysql_store_col_in_innobase_format(&dfield,(unsigned char *)&buff,TRUE,
                     pos,copy_length,dict_table_is_comp(dct_table));
 
-                ut_ad(copy_length);
+                // maybe default value is ''
+                ut_ad(dfield.len <= c_field->pack_length);
 
                 memcpy(def,dfield.data,dfield.len);
                 *def_length = dfield.len;
@@ -1649,9 +1650,11 @@ innodbase_fill_col_info(
 
         //TODO(GCS) : set default value，考虑大小端问题  done    
       
-        /* 默认值不应该超过64k */     
+        /* 默认值不应该超过64k */    
+        ut_ad(col->len < 65536);
       
-        char *buff = (char *) mem_heap_alloc(heap,64000);     
+        /* blob column would get no default values */
+        char *buff = (char *) mem_heap_alloc(heap,col->len + 100);     
         uint defleng;
         error=get_field_def_value_from_frm(field,buff,(uint *)&defleng,tmp_table,inplace_info,col,table,heap);
         if(error!=DB_SUCCESS){           

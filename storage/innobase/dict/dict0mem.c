@@ -276,7 +276,7 @@ dict_mem_table_add_col_default(
     ulint                   def_val_len
 )
 {
-    ut_ad(table && col && heap && def_val && def_val_len > 0);
+    ut_ad(table && col && heap && def_val && def_val_len >= 0);
     ut_ad(!dict_col_is_nullable(col));
 
 #ifdef UNIV_DEBUG
