@@ -338,7 +338,7 @@ Change the gcs flags of a table object in the dictionary cache. This is used in
 DISCARD TABLESPACE. */
 UNIV_INTERN
 void
-dict_table_change_gcs_flag_in_cache(
+dict_table_reset_gcs_alter_flag_in_cache(
 /*==========================*/
 dict_table_t*	table	/*!< in/out: table object already in cache */);
 

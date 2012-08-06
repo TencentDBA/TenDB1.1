@@ -150,7 +150,7 @@ Determines if the nth field contain EXTERN parts
 */
 UNIV_INLINE
 ulint
-rec_get_nth_field_offs_extern(
+rec_get_nth_field_offs_extern_old(
     /*=======================*/
     const rec_t*	rec,	/*!< in: record */
     ulint		n	/*!< in: index of the field */);

@@ -269,7 +269,7 @@ dict_mem_table_add_col_default_low(
 UNIV_INTERN
 void
 dict_mem_table_add_col_default(
-    dict_table_t*           table,
+    dict_table_t*           table,             /* 注意，此table可能不可靠，此时table可能并没加入该列信息 */
     dict_col_t*             col,
     mem_heap_t*             heap,
     const char*             def_val,

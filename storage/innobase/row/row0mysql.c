@@ -3013,30 +3013,48 @@ next_rec:
 	pars_info_add_ull_literal(info, "old_id", table->id);
 	pars_info_add_ull_literal(info, "new_id", new_id);
 
+    if (dict_table_is_gcs_after_alter_table(table))
+    {
+        /* 只有compact格式table->flags第6 bit表示临时表，所以这样做更安全 */ 
+        ut_ad((table->flags >> DICT_TF2_SHIFT) == 0);
+        pars_info_add_int4_literal(info, "mix_len",table->flags >> DICT_TF2_SHIFT);
 
-    /* aways set the mix_len as table->flags,include gcs */ 
-    pars_info_add_int4_literal(info, "mix_len",table->flags >> DICT_TF2_SHIFT);
-
-    /* recompute the n_col */
-    pars_info_add_int4_literal(info, "n_col",(table->n_def - DATA_N_SYS_COLS)|(1<<30)|(1<<31));
-
-
-	err = que_eval_sql(info,
-			   "PROCEDURE RENUMBER_TABLESPACE_PROC () IS\n"
-			   "BEGIN\n"
-			   "UPDATE SYS_TABLES"
-			   " SET ID = :new_id, SPACE = :space, N_COLS = :n_col, MIX_LEN = :mix_len\n"
-			   " WHERE ID = :old_id;\n"
-			   "UPDATE SYS_COLUMNS SET TABLE_ID = :new_id\n"
-			   " WHERE TABLE_ID = :old_id;\n"
-			   "UPDATE SYS_INDEXES"
-			   " SET TABLE_ID = :new_id, SPACE = :space\n"
-			   " WHERE TABLE_ID = :old_id;\n" 
-               "DELETE FROM SYS_ADDED_COLS_DEFAULT\n"
-               " WHERE TABLE_ID = :old_id;"
-			   "COMMIT WORK;\n"
-			   "END;\n"
-			   , FALSE, trx);
+        err = que_eval_sql(info,
+            "PROCEDURE RENUMBER_TABLESPACE_PROC () IS\n"
+            "BEGIN\n"
+            "UPDATE SYS_TABLES"
+            " SET ID = :new_id, SPACE = :space, MIX_LEN = :mix_len\n"
+            " WHERE ID = :old_id;\n"
+            "UPDATE SYS_COLUMNS SET TABLE_ID = :new_id\n"
+            " WHERE TABLE_ID = :old_id;\n"
+            "UPDATE SYS_INDEXES"
+            " SET TABLE_ID = :new_id, SPACE = :space\n"
+            " WHERE TABLE_ID = :old_id;\n" 
+            "DELETE FROM SYS_ADDED_COLS_DEFAULT\n"
+            " WHERE TABLE_ID = :old_id;"
+            "COMMIT WORK;\n"
+            "END;\n"
+            , FALSE, trx);
+    }
+    else 
+    {
+	    err = que_eval_sql(info,
+			       "PROCEDURE RENUMBER_TABLESPACE_PROC () IS\n"
+			       "BEGIN\n"
+			       "UPDATE SYS_TABLES"
+			       " SET ID = :new_id, SPACE = :space\n"
+			       " WHERE ID = :old_id;\n"
+			       "UPDATE SYS_COLUMNS SET TABLE_ID = :new_id\n"
+			       " WHERE TABLE_ID = :old_id;\n"
+			       "UPDATE SYS_INDEXES"
+			       " SET TABLE_ID = :new_id, SPACE = :space\n"
+			       " WHERE TABLE_ID = :old_id;\n" 
+                   "DELETE FROM SYS_ADDED_COLS_DEFAULT\n"
+                   " WHERE TABLE_ID = :old_id;"
+			       "COMMIT WORK;\n"
+			       "END;\n"
+			       , FALSE, trx);
+    }
 
 	if (err != DB_SUCCESS) {
 		trx->error_state = DB_SUCCESS;
@@ -3053,8 +3071,17 @@ next_rec:
 	} else {
 		dict_table_change_id_in_cache(table, new_id);
 
-        dict_table_change_gcs_flag_in_cache(table);
-        /*  */
+        if (dict_table_is_gcs_after_alter_table(table)) {
+            /* 
+                考虑自适应哈希索引是否有并发问题
+                1. 此时不可能进行DML操作
+                2. 此时B树已经释放，原自适应哈希索引只能对原B树操作。
+                3. 因此不存在并发问题。
+            */
+            dict_table_reset_gcs_alter_flag_in_cache(table);
+
+            ut_ad(!dict_table_is_gcs_after_alter_table(table));
+        }
 	}
 
 	/* Reset auto-increment. */

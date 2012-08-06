@@ -1233,14 +1233,22 @@ Change the gcs flags of a table object in the dictionary cache. This is used in
 DISCARD TABLESPACE. */
 UNIV_INTERN
 void
-dict_table_change_gcs_flag_in_cache(
-                              /*==========================*/
-                              dict_table_t*	table	/*!< in/out: table object already in cache */)
+dict_table_reset_gcs_alter_flag_in_cache(
+    /*==========================*/
+    dict_table_t*	table	/*!< in/out: table object already in cache */
+)
 {
-    ut_ad(table);
+    dict_index_t*           index;
+
+    ut_ad(table && dict_table_is_gcs_after_alter_table(table));
     ut_ad(mutex_own(&(dict_sys->mutex)));   
     table->n_cols_before_alter_table=0;
     
+    index = dict_table_get_first_index(table);
+    ut_ad(index->n_fields_before_alter != 0);
+
+    index->n_fields_before_alter = 0;
+    index->n_nullable_before_alter = 0;
 }
 
 /**********************************************************************//**

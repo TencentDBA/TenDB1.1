@@ -929,13 +929,14 @@ Determines if the nth field contain EXTERN parts
 */
 UNIV_INTERN
 ulint
-rec_get_nth_field_offs_extern(
+rec_get_nth_field_offs_extern_old(
     /*=======================*/
     const rec_t*	rec,	/*!< in: record */
-    ulint		n	/*!< in: index of the field */){
-        if(rec_get_1byte_offs_flag(rec))
-            return 0;
-        return (rec_2_get_field_end_info(rec,n) & REC_2BYTE_EXTERN_MASK);
+    ulint		n	/*!< in: index of the field */)
+{
+    if(rec_get_1byte_offs_flag(rec))
+        return 0;
+    return (rec_2_get_field_end_info(rec,n) & REC_2BYTE_EXTERN_MASK);
 }
 
 

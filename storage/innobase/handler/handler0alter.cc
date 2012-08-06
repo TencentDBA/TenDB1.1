@@ -1421,111 +1421,143 @@ static const Alter_inplace_info::HA_ALTER_FLAGS INNOBASE_ONLINE_OPERATIONS
 | Alter_inplace_info::DROP_FOREIGN_KEY_FLAG
 | Alter_inplace_info::ALTER_COLUMN_NAME_FLAG;
 
+#define DATA_INT_MAX_LEN 8
 
 /*******************************************************************//**
 Get field default value from frm's default value record
 @return	DB_SUCCESS or DB_ERROR number */
 ulint 
+get_field_def_value_from_frm2(
+    Field*              field,    
+    char*               def,
+    uint*               def_length,
+    TABLE*              table,
+    Alter_inplace_info* inplace_info,
+    dict_col_t*         col,
+    dict_table_t*       dct_table,
+    mem_heap_t*         heap
+)
+{
+    DBUG_ENTER("get_field_def_value_from_frm");
+
+    uchar*     default_ptr = table->s->default_values;
+    ut_ad(default_ptr != NULL && def != NULL);        
+    
+    Alter_info *alter_info  = (Alter_info *)inplace_info->alter_info;
+    HA_CREATE_INFO *create_info = inplace_info->create_info;        
+    List_iterator<Create_field> def_it(alter_info->create_list);
+
+    //table fields == create_list.element.
+    ut_ad(alter_info->create_list.elements == table->s->fields);                  
+ 
+    Field **    pf;
+    Field *     p_field;         
+    ulong       data_offset;
+    ulint        copy_length;
+    unsigned char   *pos;
+    Create_field *  c_field;
+
+    // 1.compute the record off set (need to judge the create_info->table_options or not?)
+    data_offset = (create_info->null_bits + 7) / 8;
+    pf=table->field;
+
+    // 2.get the field default value
+    while(c_field = def_it++){
+        ut_ad(*pf);
+        p_field=*pf;
+        pf++;            
+
+        if(p_field == field)
+        {             
+            pos = default_ptr+c_field->offset+data_offset;
+
+            dfield_t		dfield;;
+            unsigned char buff[DATA_INT_MAX_LEN + 1];
+
+            dict_col_copy_type(col,dfield_get_type(&dfield));
+
+            copy_length = c_field->pack_length;
+
+            ut_a(dfield.type.mtype != DATA_INT || copy_length <= DATA_INT_MAX_LEN);
+
+            row_mysql_store_col_in_innobase_format(&dfield,(unsigned char *)&buff,TRUE,
+                pos,copy_length,dict_table_is_comp(dct_table));
+
+            // maybe default value is ''
+            ut_ad(dfield.len <= c_field->pack_length);
+
+            memcpy(def,dfield.data,dfield.len);
+            *def_length = dfield.len;
+
+            DBUG_RETURN(DB_SUCCESS);
+        } 
+    }
+    DBUG_PRINT("warn",("Cannot find the givin Field!"));
+
+    DBUG_RETURN(DB_ERROR);
+}
+
+ulint 
 get_field_def_value_from_frm(
-    Field   *field,    
-    char    *def,
-    uint    *def_length,
-    TABLE   *table ,
-    Alter_inplace_info  *inplace_info,
-    dict_col_t          *col,
-    dict_table_t        *dct_table,
-    mem_heap_t*         heap){
-        DBUG_ENTER("get_field_def_value_from_frm");
+    TABLE*              table,
+    dict_col_t*         col,
+    ulint               nth_fld,
+    ibool               is_comp,
+    mem_heap_t*         heap,
+    char**              def,                /* in/out */
+    uint*               def_length         /* out */
+)
+{
+    Field*              field;
+    ulong               data_offset = 0;
+    ulint               copy_length;
+    unsigned char*      def_pos;
+    ulint               n_null = 0;
+    ulint               i = 0;
+    dfield_t		    dfield;;
+    unsigned char       int_buff[DATA_INT_MAX_LEN + 1];
 
-        uchar*     default_ptr = table->s->default_values;
-        ut_ad(default_ptr != NULL && def != NULL);        
-        
-        Alter_info *alter_info  = (Alter_info *)inplace_info->alter_info;
-        HA_CREATE_INFO *create_info = inplace_info->create_info;        
-        List_iterator<Create_field> def_it(alter_info->create_list);
+    DBUG_ENTER("get_field_def_value_from_frm");
+                       
+    ut_ad(nth_fld < table->s->fields && nth_fld == col->ind);
 
-        //table fields == create_list.element.
-        ut_ad(alter_info->create_list.elements == table->s->fields);                  
-     
-        Field **    pf;
-        Field *     p_field;         
-        ulong       data_offset;
-        ulint        copy_length;
-        unsigned char   *pos;
-        Create_field *  c_field;
+    for (i = 0; i < table->s->fields; ++i) {
+        field = table->field[i];
 
-        // 1.compute the record off set (need to judge the create_info->table_options or not?)
-        data_offset = (create_info->null_bits + 7) / 8;
-        pf=table->field;
-
-        // 2.get the field default value
-        while(c_field = def_it++){
-            ut_ad(*pf);
-            p_field=*pf;
-            pf++;            
-
-            if(p_field == field)
-            {             
-                pos = default_ptr+c_field->offset+data_offset;
-
-                dfield_t		dfield;
-                const dtype_t*	dtype;
-                ulint           type;
-                unsigned char buff[5];
-
-                dict_col_copy_type(col,dfield_get_type(&dfield));
-                dtype  = dfield_get_type(&dfield);
-                type   = dtype->mtype;
-
-                /*
-                    if the field is VARCHAR/VARMYSQL/BINARY,the start copy pos should get rid of the length's byte(1 or 2)
-                    the pack_length is 2-256 258+
-                */
-                if( type == DATA_VARCHAR   || 
-                    type == DATA_VARMYSQL  ||
-                    type == DATA_BINARY
-                    ){                  
-                    /*
-                   // char * def_val = (char *)me(c_field->length,MYF(MY_WME));
-                    char * def_val = (char *) mem_heap_alloc(heap,c_field->length);
-                    String mstr(def_val,c_field->length,c_field->def->default_charset()); 
-
-                    String *tstr=&mstr;
-                    const char *well_formed_error_pos;
-                    const char *cannot_convert_error_pos;
-                    const char *from_end_pos;
-
-                    tstr = c_field->def->val_str(tstr);
-                    copy_length = well_formed_copy_nchars(c_field->charset,def_val,c_field->length,c_field->def->default_charset(),
-                        tstr->ptr(),tstr->length(),tstr->length(),&well_formed_error_pos,&cannot_convert_error_pos,&from_end_pos);
-                    */
-
-                    ulint lenlen = c_field->length>255?2:1;
-                    unsigned char  *t=pos;
-                    row_mysql_read_true_varchar(&copy_length,t,lenlen);
-                                     
-                }else{
-                    //ut_ad(0);
-                    /* here we should use the pack_length */
-
-                    copy_length = c_field->pack_length;
-                }  
-
-                row_mysql_store_col_in_innobase_format(&dfield,(unsigned char *)&buff,TRUE,
-                    pos,copy_length,dict_table_is_comp(dct_table));
-
-                // maybe default value is ''
-                ut_ad(dfield.len <= c_field->pack_length);
-
-                memcpy(def,dfield.data,dfield.len);
-                *def_length = dfield.len;
-
-                DBUG_RETURN(DB_SUCCESS);
-            } 
+        /* 计算字段偏移 */
+        if (i < nth_fld) {
+            data_offset += field->pack_length();
         }
-        DBUG_PRINT("warn",("Cannot find the givin Field!"));
 
-        DBUG_RETURN(DB_ERROR);
+        /* 计算null字段个数 */
+        if (field->maybe_null()) {
+            n_null ++;
+        } 
+    }
+
+    /* 计算null位图占用空间 */
+    data_offset += (n_null + 7) / 8;
+
+    field = table->field[nth_fld];
+
+    /* 该字段默认值 */
+    def_pos = table->s->default_values + data_offset;
+
+    dict_col_copy_type(col, dfield_get_type(&dfield));
+    copy_length = field->pack_length();
+
+    ut_a(dfield.type.mtype != DATA_INT || copy_length <= DATA_INT_MAX_LEN);
+
+    row_mysql_store_col_in_innobase_format(&dfield,(unsigned char *)&int_buff[0],TRUE,
+        def_pos,copy_length,is_comp);
+
+    // maybe default value is ''
+    ut_ad(dfield.len <= field->pack_length());
+
+    *def = (char*)mem_heap_dup(heap,dfield.data,dfield.len);
+    *def_length = dfield.len;
+
+    DBUG_RETURN(DB_SUCCESS);
 }
 
 
@@ -1647,20 +1679,15 @@ innodbase_fill_col_info(
 
     if (!dict_col_is_nullable(col))
     {
-
-        //TODO(GCS) : set default value，考虑大小端问题  done    
-      
-        /* 默认值不应该超过64k */    
-        ut_ad(col->len < 65536);
-      
         /* blob column would get no default values */
-        char *buff = (char *) mem_heap_alloc(heap,col->len + 100);     
-        uint defleng;
-        error=get_field_def_value_from_frm(field,buff,(uint *)&defleng,tmp_table,inplace_info,col,table,heap);
+        char *buff = NULL;     
+        uint defleng = 0;
+        //error=get_field_def_value_from_frm(field,buff,(uint *)&defleng,tmp_table,inplace_info,col,table,heap);
+        error = get_field_def_value_from_frm(tmp_table, col, field_idx, dict_table_is_comp(table), heap, &buff, &defleng);
         if(error!=DB_SUCCESS){           
             goto err_exit;
         }
-        dict_mem_table_add_col_default(table, col, heap, (char*)buff,defleng);       
+        dict_mem_table_add_col_default(table, col, heap, buff,defleng);       
     }
     
 err_exit:
