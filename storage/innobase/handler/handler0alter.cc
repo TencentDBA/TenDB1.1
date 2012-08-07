@@ -1536,6 +1536,11 @@ get_field_def_value_from_frm(
         } 
     }
 
+    /* If fixed row records, we need one bit to check for deleted rows: refer to mysql_create_frm:140l */ 
+    if(!(table->s->db_options_in_use  & HA_OPTION_PACK_RECORD)){
+        n_null ++;
+    }
+
     /* 计算null位图占用空间 */
     data_offset += (n_null + 7) / 8;
 
