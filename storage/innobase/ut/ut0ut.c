@@ -268,6 +268,34 @@ ut_print_timestamp(
 }
 
 /**********************************************************//**
+print memory */
+UNIV_INTERN
+void
+ut_print_memory(
+    FILE*       f,
+    byte*       mem,
+    ulint       len,
+    char*       info_str
+)
+{
+    ulint   i;
+
+    ut_print_timestamp(f);
+    fprintf(f, "%s", info_str);
+
+    for (i = 0; i < len; ++i)
+    {
+        if (i % 16 == 0)
+            fprintf(f, "\n");
+
+        fprintf(f, "%02x ",  *((byte*)mem + i) & 0xff);
+    }
+
+    fprintf(f, "\n");
+
+}
+
+/**********************************************************//**
 Sprintfs a timestamp to a buffer, 13..14 chars plus terminating NUL. */
 UNIV_INTERN
 void
