@@ -1,0 +1,22 @@
+create table innodb_bug52663 (what varchar(5), id integer, count integer, primary key
+(what, id)) engine=innodb row_format=compact;
+drop table innodb_bug52663;
+create table bug53290 (x bigint) engine=innodb row_format=compact;
+insert into bug53290 () values (),(),(),(),(),(),(),(),(),(),(),();
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+insert into bug53290 select * from bug53290;
+alter table bug53290 add unique index `idx` (x);
+drop table bug53290;
+Table	Op	Msg_type	Msg_text
+test.bug56680_2	check	status	OK
