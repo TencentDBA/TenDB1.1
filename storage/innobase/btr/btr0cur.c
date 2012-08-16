@@ -2339,6 +2339,7 @@ btr_cur_pessimistic_update(
 		inherited values. They can be inherited if we have
 		updated the primary key to another value, and then
 		update it back again. */
+        /* 对于不生成undo记录的（事务回滚），没有purge了，删除update的原行外记录 */
 
 		ut_ad(big_rec_vec == NULL);
 
@@ -2365,7 +2366,7 @@ btr_cur_pessimistic_update(
 			goto make_external;
 		}
 	} else if (page_zip_rec_needs_ext(
-			   rec_get_converted_size(index, new_entry, n_ext),
+			   rec_get_converted_size(index, new_entry, n_ext),         /* 不更新的原行外记录不改变，但回滚时，默认值可能导致产生新的行外记录 */
 			   page_is_comp(page), 0, 0)) {
 make_external:
 		big_rec_vec = dtuple_convert_big_rec(index, new_entry, &n_ext);
@@ -4163,7 +4164,7 @@ btr_store_big_rec_extern_fields(
 	ulint		prev_page_no;
 	ulint		hint_page_no;
 	ulint		i;
-	mtr_t		mtr;
+	mtr_t		mtr;                    /* blob页面申请操作使用一个独立的mtr，那就有可能是系统崩溃后而浪费掉 */
 	mtr_t*		alloc_mtr;
 	mem_heap_t*	heap = NULL;
 	page_zip_des_t*	page_zip;
@@ -4239,7 +4240,7 @@ btr_store_big_rec_extern_fields(
 		alloc_mtr = btr_mtr;
 	} else {
 		/* Use the local mtr for allocations. */
-		alloc_mtr = &mtr;
+		alloc_mtr = &mtr;               /* 对于非更新操作，不存在释放页 */
 	}
 
 #if defined UNIV_DEBUG || defined UNIV_BLOB_LIGHT_DEBUG
@@ -4317,7 +4318,7 @@ alloc_another:
 				ut_ad(alloc_mtr == btr_mtr);
 				ut_ad(btr_blob_op_is_update(op));
 				ut_ad(n_freed_pages < btr_mtr->n_freed_pages);
-				freed_pages[n_freed_pages++] = block;
+				freed_pages[n_freed_pages++] = block;               /* 该页面需重新释放 */
 				goto alloc_another;
 			}
 
@@ -4587,7 +4588,7 @@ func_exit:
 		ut_ad(btr_blob_op_is_update(op));
 
 		for (i = 0; i < n_freed_pages; i++) {
-			btr_page_free_low(index, freed_pages[i], 0, alloc_mtr);
+			btr_page_free_low(index, freed_pages[i], 0, alloc_mtr);         /* 释放之前申请的页面 */
 		}
 	}
 

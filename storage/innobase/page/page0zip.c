@@ -91,7 +91,7 @@ Compare at most sizeof(field_ref_zero) bytes.
 
 /* Enable some extra debugging output.  This code can be enabled
 independently of any UNIV_ debugging conditions. */
-#if (!defined UNIV_DEBUG && !defined UNIV_ZIP_DEBUG)
+#if defined UNIV_DEBUG || defined UNIV_ZIP_DEBUG
 # include <stdarg.h>
 __attribute__((format (printf, 1, 2)))
 /**********************************************************************//**

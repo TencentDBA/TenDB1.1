@@ -5668,6 +5668,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
         {
             alter_info->datetime_field= def;
             alter_info->error_if_not_empty= TRUE;
+            add_column_simple_flag = false;
         }
         
         /** 
@@ -5924,7 +5925,7 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     already check the default values of new added column.
     here we donnot check change_level,for normal add column ,the change level is METADATA_ONLY
     */
-    if (!alter_info->error_if_not_empty && add_column_simple_flag && inplace_info_out && alter_info->change_level == ALTER_TABLE_METADATA_ONLY && !thd->lex->ignore)
+    if (add_column_simple_flag && inplace_info_out && alter_info->change_level == ALTER_TABLE_METADATA_ONLY && !thd->lex->ignore)
     {    
         
 		/* 
