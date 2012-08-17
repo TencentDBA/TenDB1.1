@@ -133,7 +133,7 @@ const char *delimiter= "\n";
 const char *create_schema_string= "mysqlslap";
 const char *opt_table_name="t1";
 
-static my_bool opt_preserve= TRUE, opt_no_drop= FALSE,opt_no_create=FALSE;
+static my_bool opt_preserve= TRUE, opt_no_drop= FALSE,opt_no_create=FALSE,opt_gcs_def=FALSE;
 static my_bool debug_info_flag= 0, debug_check_flag= 0;
 static my_bool opt_only_print= FALSE;
 static my_bool opt_compress= FALSE, tty_password= FALSE,
@@ -633,6 +633,9 @@ static struct my_option my_long_options[] =
   {"engine", 'e', "Storage engine to use for creating the table.",
     &default_engine, &default_engine, 0,
     GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"gcs-with-def", 'G', "Create table with the last column fast added with default value",
+  &opt_gcs_def, &opt_gcs_def, 0,
+  GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"host", 'h', "Connect to host.", &host, &host, 0, GET_STR,
     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"iterations", 'i', "Number of times to run the tests.", &iterations,
@@ -1094,7 +1097,11 @@ build_table_string(void)
               snprintf(buf,HUGE_STRING_LENGTH,"intcol%d INT(32), INDEX(intcol%d)",
                   last_column_id,last_column_id);
           }else{
-              snprintf(buf,HUGE_STRING_LENGTH,"intcol%d INT(32)",last_column_id);
+              if(opt_gcs_def){
+                 snprintf(buf,HUGE_STRING_LENGTH,"intcol%d INT(32) not null default '99999999'",last_column_id);
+              }else{
+                 snprintf(buf,HUGE_STRING_LENGTH,"intcol%d INT(32)",last_column_id);
+              }
           }
           break;
       case BUILD_TABLE_ALTER_ADD_VAR:
@@ -1103,8 +1110,13 @@ build_table_string(void)
                   "charcol%d VARCHAR(128), INDEX(charcol%d) ", 
                   last_column_id, last_column_id);
           }else{
-              snprintf(buf, HUGE_STRING_LENGTH, 
-                  "charcol%d VARCHAR(128) ", last_column_id);
+              if(opt_gcs_def){
+                  snprintf(buf, HUGE_STRING_LENGTH, 
+                  "charcol%d VARCHAR(128) not null default '01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567' ", last_column_id);
+              }else{
+                  snprintf(buf, HUGE_STRING_LENGTH, 
+                      "charcol%d VARCHAR(128) ", last_column_id);
+              }
           }
           break;
       default:
