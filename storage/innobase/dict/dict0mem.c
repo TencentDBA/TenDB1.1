@@ -293,7 +293,7 @@ dict_mem_table_add_col_default(
     col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
     col->def_val->col = col;
     col->def_val->def_val_len = def_val_len;
-    col->def_val->def_val = mem_heap_strdupl(heap, (char*)def_val, def_val_len);
+    col->def_val->def_val = (byte*)mem_heap_strdupl(heap, (char*)def_val, def_val_len);
 
    // dict_mem_table_add_col_default_low(col);
 }

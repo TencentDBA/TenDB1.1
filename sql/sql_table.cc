@@ -4965,7 +4965,7 @@ mysql_compare_tables(TABLE *table,
     prior to 5.0 branch.
     See BUG#6236.
   */
-  if (table->s->fields != alter_info->create_list.elements && inplace_info == NULL ||                   /* 增删列，这里修改下 to do */
+  if ((table->s->fields != alter_info->create_list.elements && inplace_info == NULL) ||                   /* 增删列，这里修改下 to do */
       table->s->db_type() != create_info->db_type ||                            /* Engine发生改变 */
       table->s->tmp_table ||                                                    /* 不能是临时表 */
       create_info->used_fields & HA_CREATE_USED_ENGINE ||
