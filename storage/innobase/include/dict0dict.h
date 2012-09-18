@@ -340,7 +340,9 @@ UNIV_INTERN
 void
 dict_table_reset_gcs_alter_flag_in_cache(
 /*==========================*/
-dict_table_t*	table	/*!< in/out: table object already in cache */);
+    dict_table_t*	table	/*!< in/out: table object already in cache */,
+    ibool           is_real_gcs     /* whether use real gcs format like after alter table */
+);
 
 /**********************************************************************//**
 Adds a foreign key constraint object to the dictionary cache. May free

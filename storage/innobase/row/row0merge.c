@@ -2327,13 +2327,18 @@ row_merge_create_temporary_table(
 	ulint		n_cols = dict_table_get_n_user_cols(table);
 	ulint		error;
 	mem_heap_t*	heap = mem_heap_create(1000);
+    ulint       n_cols_before_alter = 0;
 
 	ut_ad(table_name);
 	ut_ad(index_def);
 	ut_ad(table);
 	ut_ad(mutex_own(&dict_sys->mutex));
 
-	new_table = dict_mem_table_create(table_name, 0, n_cols, table->flags, table->is_gcs, 0);   /* 重建主键相当于重建表，n_cols_before_alter必为0 */
+    /* 重建主键相当于重建表;重建gcs表，n_cols_before_alter视乎参数innodb_create_use_gcs_real_format */
+    if (srv_create_use_gcs_real_format && table->is_gcs)
+        n_cols_before_alter = n_cols;
+
+	new_table = dict_mem_table_create(table_name, 0, n_cols, table->flags, table->is_gcs, n_cols_before_alter);
 
 	for (i = 0; i < n_cols; i++) {
 		const dict_col_t*	col;

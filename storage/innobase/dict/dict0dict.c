@@ -1235,20 +1235,33 @@ UNIV_INTERN
 void
 dict_table_reset_gcs_alter_flag_in_cache(
     /*==========================*/
-    dict_table_t*	table	/*!< in/out: table object already in cache */
+    dict_table_t*	table	/*!< in/out: table object already in cache */,
+    ibool           is_real_gcs
 )
 {
     dict_index_t*           index;
 
     ut_ad(table && dict_table_is_gcs_after_alter_table(table));
     ut_ad(mutex_own(&(dict_sys->mutex)));   
-    table->n_cols_before_alter_table=0;
-    
+
+
     index = dict_table_get_first_index(table);
     ut_ad(index->n_fields_before_alter != 0);
 
-    index->n_fields_before_alter = 0;
-    index->n_nullable_before_alter = 0;
+    if (!is_real_gcs)
+    {
+        table->n_cols_before_alter_table=0;
+
+        index->n_fields_before_alter = 0;
+        index->n_nullable_before_alter = 0;
+    }
+    else
+    {
+        table->n_cols_before_alter_table = table->n_cols;
+        
+        index->n_fields_before_alter = index->n_fields;
+        index->n_nullable_before_alter = index->n_nullable;
+    }
 }
 
 /**********************************************************************//**
@@ -1979,8 +1992,8 @@ undo_size_ok:
     if (dict_index_is_gcs_clust_after_alter_table(new_index))
     {
         ut_ad(table->n_cols == table->n_def);
-        ut_ad(table->n_cols_before_alter_table > 0 &&
-            table->n_cols_before_alter_table < table->n_cols);
+        ut_a(table->n_cols_before_alter_table > 0 &&
+            table->n_cols_before_alter_table <= table->n_cols);
         new_index->n_fields_before_alter = new_index->n_fields - (table->n_cols - table->n_cols_before_alter_table);
         new_index->n_nullable_before_alter  = dict_index_get_first_n_field_n_nullable(new_index, new_index->n_fields_before_alter);
     }

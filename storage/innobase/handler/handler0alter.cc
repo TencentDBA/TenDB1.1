@@ -1816,7 +1816,7 @@ innobase_update_systable_n_cols_for_gcs(
     }
 
 
-    ut_ad(!(table->flags >> DICT_TF2_SHIFT));
+    ut_a(!(table->flags >> DICT_TF2_SHIFT));
     /*
         TODO(GCS): 如果table->flags增加标记为,需要修改这个地方的赋值.
         这里直接将mix_len的高位2字节置为表字段的数量了.

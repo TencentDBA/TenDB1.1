@@ -6534,6 +6534,7 @@ create_table_def(
 	ulint		long_true_varchar;
 	ulint		charset_no;
 	ulint		i;
+    ulint       n_cols_before_alter = 0;
 
 	DBUG_ENTER("create_table_def");
 	DBUG_PRINT("enter", ("table_name: %s", table_name));
@@ -6553,10 +6554,14 @@ create_table_def(
 
 	n_cols = form->s->fields;
 
+    /* 新建gcs表，n_cols_before_alter视乎参数innodb_create_use_gcs_real_format */
+    if (srv_create_use_gcs_real_format && is_gcs)
+        n_cols_before_alter = n_cols;
+
 	/* We pass 0 as the space id, and determine at a lower level the space
 	id where to store the table */
 
-	table = dict_mem_table_create(table_name, 0, n_cols, flags, is_gcs, 0);     /* 新建表，n_cols_before_alter必为0 */
+	table = dict_mem_table_create(table_name, 0, n_cols, flags, is_gcs, n_cols_before_alter);     
 
 	if (path_of_temp_table) {
 		table->dir_path_of_temp_table =
@@ -11306,6 +11311,28 @@ innodb_default_row_format_update(
 }
 
 /****************************************************************//**
+Update the system variable innodb_create_use_gcs_real_format using the "saved"
+value. This function is registered as a callback with MySQL. */
+static
+void
+innodb_create_use_gcs_real_format_update(
+/*==============================*/
+	THD*				thd,		/*!< in: thread handle */
+	struct st_mysql_sys_var*	var,		/*!< in: pointer to
+							system variable */
+	void*				var_ptr,	/*!< out: where the
+							formal string goes */
+	const void*			save)		/*!< in: immediate result
+							from check function */
+{
+	if (*(my_bool*) save) {
+		srv_create_use_gcs_real_format = TRUE;
+	} else {
+		srv_create_use_gcs_real_format = FALSE;
+	}
+}
+
+/****************************************************************//**
 Update the system variable innodb_adaptive_hash_index using the "saved"
 value. This function is registered as a callback with MySQL. */
 static
@@ -11564,6 +11591,11 @@ static MYSQL_SYSVAR_BOOL(file_per_table, srv_file_per_table,
   PLUGIN_VAR_NOCMDARG,
   "Stores each InnoDB table to an .ibd file in the database dir.",
   NULL, NULL, FALSE);
+
+static MYSQL_SYSVAR_BOOL(create_use_gcs_real_format, srv_create_use_gcs_real_format,
+  PLUGIN_VAR_OPCMDARG,
+  "Create gcs table use gcs real format like altered table",
+  NULL, innodb_create_use_gcs_real_format_update, FALSE);
 
 static MYSQL_SYSVAR_STR(file_format, innobase_file_format_name,
   PLUGIN_VAR_RQCMDARG,
@@ -11870,6 +11902,7 @@ static struct st_mysql_sys_var* innobase_system_variables[]= {
   MYSQL_SYSVAR(checksums),
   MYSQL_SYSVAR(commit_concurrency),
   MYSQL_SYSVAR(concurrency_tickets),
+  MYSQL_SYSVAR(create_use_gcs_real_format),
   MYSQL_SYSVAR(data_file_path),
   MYSQL_SYSVAR(data_home_dir),
   MYSQL_SYSVAR(default_row_format),

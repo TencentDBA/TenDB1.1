@@ -2739,7 +2739,8 @@ row_truncate_table_for_mysql(
 	mtr_t		mtr;
 	table_id_t	new_id;
 	ulint		recreate_space = 0;
-	pars_info_t*	info = NULL;  
+	pars_info_t*	info = NULL;
+    my_bool     create_use_gcs_real_format;
 
 	/* How do we prevent crashes caused by ongoing operations on
 	the table? Old operations could try to access non-existent
@@ -3013,12 +3014,20 @@ next_rec:
 	pars_info_add_ull_literal(info, "old_id", table->id);
 	pars_info_add_ull_literal(info, "new_id", new_id);
 
+    /* 使用临时变量，防止两次使用该值不一致 */
+    create_use_gcs_real_format = srv_create_use_gcs_real_format;
+
     if (dict_table_is_gcs_after_alter_table(table))
     {
         /* 只有compact格式table->flags第6 bit表示临时表，所以这样做更安全 */ 
         ut_ad((table->flags >> DICT_TF2_SHIFT) == 0);
-        pars_info_add_int4_literal(info, "mix_len",table->flags >> DICT_TF2_SHIFT);
 
+        if (create_use_gcs_real_format)
+            pars_info_add_int4_literal(info, "mix_len",
+                            (table->flags >> DICT_TF2_SHIFT) | ((dict_table_get_n_cols(table) - DATA_N_SYS_COLS) << 16));
+        else
+            pars_info_add_int4_literal(info, "mix_len",table->flags >> DICT_TF2_SHIFT);
+        
         err = que_eval_sql(info,
             "PROCEDURE RENUMBER_TABLESPACE_PROC () IS\n"
             "BEGIN\n"
@@ -3078,9 +3087,7 @@ next_rec:
                 2. 此时B树已经释放，原自适应哈希索引只能对原B树操作。
                 3. 因此不存在并发问题。
             */
-            dict_table_reset_gcs_alter_flag_in_cache(table);
-
-            ut_ad(!dict_table_is_gcs_after_alter_table(table));
+            dict_table_reset_gcs_alter_flag_in_cache(table, create_use_gcs_real_format);
         }
 	}
 
