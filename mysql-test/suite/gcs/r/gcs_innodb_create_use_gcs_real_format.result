@@ -1,3 +1,7 @@
+SET @start_global_value = @@global.innodb_create_use_gcs_real_format;
+SELECT @start_global_value;
+@start_global_value
+0
 show variables like '%gcs%';
 Variable_name	Value
 innodb_create_use_gcs_real_format	OFF
@@ -47,3 +51,7 @@ GCS
 drop table t2_use_gcs_real_format;
 drop table t3_use_gcs_real_format;
 set global innodb_create_use_gcs_real_format = off;
+SET @@global.innodb_create_use_gcs_real_format = @start_global_value;
+SELECT @@global.innodb_create_use_gcs_real_format;
+@@global.innodb_create_use_gcs_real_format
+0
