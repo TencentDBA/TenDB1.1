@@ -1816,7 +1816,7 @@ innobase_update_systable_n_cols_for_gcs(
     }
 
 
-    ut_ad(!(table->flags >> DICT_TF2_SHIFT));
+    ut_a(!(table->flags >> DICT_TF2_SHIFT));
     /*
         TODO(GCS): 如果table->flags增加标记为,需要修改这个地方的赋值.
         这里直接将mix_len的高位2字节置为表字段的数量了.
@@ -1949,7 +1949,7 @@ innobase_add_columns_simple(
     col_name = col_names;
 
     def_it.rewind();
-    while (cfield =def_it++)
+    while (!!(cfield =def_it++))
     {
         //new field，并且是最后若干列
         if (!cfield->field)
@@ -2598,7 +2598,7 @@ ha_innobase::inplace_alter_table(
 
         /* inplace alter table rollback日志 */
         ut_print_timestamp(stderr);
-        fprintf(stderr, "  [InnoDB inplace alter table]  rollback, error no : %ul,  query: %s; db_name:%s; tmp_name: %s \n", err, ha_query(), table->s->db.str, tmp_table->alias);
+        fprintf(stderr, "  [InnoDB inplace alter table]  rollback, error no : "ULINTPF",  query: %s; db_name:%s; tmp_name: %s \n", err, ha_query(), table->s->db.str, tmp_table->alias);
     }
 
     /* 锁什么时候释放 */

@@ -74,6 +74,8 @@ dict_mem_table_create(
 	ut_a(!(flags & (~0 << DICT_TF2_BITS)));
     ut_ad(!is_gcs || flags & DICT_TF_COMPACT);              /* GCS必须是compact格式 */
 
+    ut_a(n_cols_before_alter <= n_cols);
+
 	heap = mem_heap_create(DICT_HEAP_SIZE);
 
 	table = mem_heap_zalloc(heap, sizeof(dict_table_t));
@@ -293,7 +295,7 @@ dict_mem_table_add_col_default(
     col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
     col->def_val->col = col;
     col->def_val->def_val_len = def_val_len;
-    col->def_val->def_val = mem_heap_strdupl(heap, (char*)def_val, def_val_len);
+    col->def_val->def_val = (byte*)mem_heap_strdupl(heap, (char*)def_val, def_val_len);
 
    // dict_mem_table_add_col_default_low(col);
 }

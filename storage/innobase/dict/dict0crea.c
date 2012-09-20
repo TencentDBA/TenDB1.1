@@ -130,10 +130,17 @@ dict_create_sys_tables_tuple(
 	dfield = dtuple_get_nth_field(entry, 5/*MIX_LEN*/);
 
 	ptr = mem_heap_alloc(heap, 4);
-	mach_write_to_4(ptr, table->flags >> DICT_TF2_SHIFT);
 
-    ut_ad(table->n_cols_before_alter_table == 0);
-
+    if (dict_table_is_gcs_after_alter_table(table))
+    {
+        //innodb_create_use_gcs_real_format
+        mach_write_to_4(ptr, (table->flags >> DICT_TF2_SHIFT) | ((table->n_cols_before_alter_table - DATA_N_SYS_COLS) << 16));
+    }
+    else
+    {
+        mach_write_to_4(ptr, table->flags >> DICT_TF2_SHIFT);
+    }
+   
 	dfield_set_data(dfield, ptr, 4);
 	/* 8: CLUSTER_NAME ---------------------*/
 	dfield = dtuple_get_nth_field(entry, 6/*CLUSTER_NAME*/);

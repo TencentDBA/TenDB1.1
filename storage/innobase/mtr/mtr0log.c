@@ -663,8 +663,8 @@ mlog_parse_index(
         if (dict_index_is_gcs_clust_after_alter_table(ind))
         {
             ut_ad(table->n_cols == table->n_def);
-            ut_ad(table->n_cols_before_alter_table > 0 &&
-                table->n_cols_before_alter_table < table->n_cols);
+            ut_a(table->n_cols_before_alter_table > 0 &&
+                table->n_cols_before_alter_table <= table->n_cols);
             ind->n_fields_before_alter = n_fields_before_alter;
             ind->n_nullable_before_alter  = dict_index_get_first_n_field_n_nullable(ind, ind->n_fields_before_alter);
         }
