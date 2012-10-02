@@ -305,7 +305,7 @@ cmp_data_data_slow(
 	ulint	cur_bytes;
 
 
-    ut_ad(len1 != UNIV_SQL_DEFAULT && len2 != UNIV_SQL_DEFAULT);
+    ut_a(len1 != UNIV_SQL_DEFAULT && len2 != UNIV_SQL_DEFAULT);
 
 	if (len1 == UNIV_SQL_NULL || len2 == UNIV_SQL_NULL) {
 

@@ -104,6 +104,10 @@ extern ibool	srv_file_per_table;
 #endif /* UNIV_HOTBACKUP */
 /** The file format to use on new *.ibd files. */
 extern ulint	srv_file_format;
+/* whether gcs is the default row format */
+extern ibool	srv_is_gcs_default;
+/* whether create gcs table use gcs real format */
+extern my_bool	srv_create_use_gcs_real_format;
 /** Whether to check file format during startup.  A value of
 DICT_TF_FORMAT_MAX + 1 means no checking ie. FALSE.  The default is to
 set it to the highest format we support. */

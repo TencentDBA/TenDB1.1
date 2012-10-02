@@ -516,7 +516,7 @@ row_upd_rec_in_place(
 
         ibool   is_gcs = rec_is_gcs(rec);
         
-        ut_ad(!is_gcs || (dict_index_is_gcs_clust_after_alter_table(index) &&
+        ut_a(!is_gcs || (dict_index_is_gcs_clust_after_alter_table(index) &&
             rec_gcs_get_field_count(rec, NULL) <= dict_index_get_n_fields(index)));             /* 正常原地更新不存在字典不一致的情况，如果不一致就不会执行原地更新。但如row_vers_impl_x_locked_off_kernel需要构建原版本记录，需利用这接口，这种情况下有可能不一致 */
 
         rec_set_info_bits_new(rec, update->info_bits);

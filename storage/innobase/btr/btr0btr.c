@@ -976,6 +976,8 @@ that the caller has made the reservation for free extents!
 @retval NULL if no page could be allocated
 @retval block, rw_lock_x_lock_count(&block->lock) == 1 if allocation succeeded
 (init_mtr == mtr, or the page was not previously freed in mtr)
+为什么呢？由于对于一个更新操作（一个mtr），有可能进行页面回收。如果此时需要申请一页，可能刚被mtr回收的，
+而此时又需要被init_mtr使用，因此需要特殊处理。参考函数btr_store_big_rec_extern_fields
 @retval block (not allocated or initialized) otherwise */
 UNIV_INTERN
 buf_block_t*

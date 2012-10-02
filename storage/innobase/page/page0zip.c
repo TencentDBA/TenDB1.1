@@ -1993,6 +1993,9 @@ page_zip_apply_log(
 			heap_status += 1 << REC_HEAP_NO_SHIFT;
 		}
 
+        /* 将GCS标记位置0 */
+        rec_set_gcs_flag(rec, 0);
+
 		mach_write_to_2(rec - REC_NEW_HEAP_NO, hs);
 
 		if (val & 1) {
@@ -2166,6 +2169,10 @@ page_zip_decompress_node_ptrs(
 		ut_ad(d_stream->next_out == rec - REC_N_NEW_EXTRA_BYTES);
 		/* Prepare to decompress the data bytes. */
 		d_stream->next_out = rec;
+
+        /* 将GCS标记位置0 */
+        rec_set_gcs_flag(rec, 0);
+
 		/* Set heap_no and the status bits. */
 		mach_write_to_2(rec - REC_NEW_HEAP_NO, heap_status);
 		heap_status += 1 << REC_HEAP_NO_SHIFT;
@@ -2359,6 +2366,9 @@ page_zip_decompress_sec(
 		/* Skip the REC_N_NEW_EXTRA_BYTES. */
 
 		d_stream->next_out = rec;
+
+        /* 将GCS标记位置0 */
+        rec_set_gcs_flag(rec, 0);
 
 		/* Set heap_no and the status bits. */
 		mach_write_to_2(rec - REC_NEW_HEAP_NO, heap_status);
@@ -2613,6 +2623,10 @@ page_zip_decompress_clust(
 		}
 
 		ut_ad(d_stream->next_out == rec - REC_N_NEW_EXTRA_BYTES);
+
+        /* 将GCS标记位置0 */
+        rec_set_gcs_flag(rec, 0);
+
 		/* Prepare to decompress the data bytes. */
 		d_stream->next_out = rec;
 		/* Set heap_no and the status bits. */

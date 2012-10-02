@@ -138,19 +138,98 @@ row_undo_mod_clust_low(
 	} else {
 		mem_heap_t*	heap		= NULL;
 		big_rec_t*	dummy_big_rec;
+        ulint           upd_flag;
+        dict_index_t*   index = btr_cur->index;
+
+        upd_flag = BTR_NO_LOCKING_FLAG
+                        | BTR_NO_UNDO_LOG_FLAG
+                        | BTR_KEEP_SYS_FLAG;
+
+        /* 
+            对于普通表来说，undo时不会产生行外数据，而对于GCS表是有可能的，因此需要加上BTR_KEEP_POS_FLAG标记 
+            
+            该标记用于生成行外记录时保留游标的位置，会有很小的性能损耗。
+            
+            但仅在默认值时大字段才会生成行外，大部分时候并没问题。
+        */
+        if (dict_index_is_gcs_clust_after_alter_table(index))
+            upd_flag |= BTR_KEEP_POS_FLAG;
 
 		ut_ad(mode == BTR_MODIFY_TREE);
 
 		err = btr_cur_pessimistic_update(
-			BTR_NO_LOCKING_FLAG
-			| BTR_NO_UNDO_LOG_FLAG
-			| BTR_KEEP_SYS_FLAG,
+			upd_flag,
 			btr_cur, &heap, &dummy_big_rec, node->update,
 			node->cmpl_info, thr, mtr);
 
-		ut_a(!dummy_big_rec);
-		if (UNIV_LIKELY_NULL(heap)) {
-			mem_heap_free(heap);
+		//ut_a(!dummy_big_rec);
+
+        /*
+            原undo操作不可能有行外数据，但由于加入默认值的处理，就有可能了。
+            加入行外处理已作以下保证：
+            1. mtr抓取页面足够少，该undo操作是一个undo页面一个mtr处理，因此不会产生抓大量页面或导致页面死锁情况。
+            2. index->lock和block->lock以上x-latch，在btr_cur_pessimistic_update中，如果需要生成行外记录就会对索引上锁。
+            3. 行外数据的页面空间由底层接口fsp_alloc_free_page自动分配，不需要fsp_reserve_free_extents来显示预分配。  
+        */
+        if (dummy_big_rec)
+        {
+            ulint	offsets_[REC_OFFS_NORMAL_SIZE];
+            rec_t*	rec;
+            
+            rec_offs_init(offsets_);
+
+            ut_a(dict_index_is_gcs_clust_after_alter_table(index));
+            ut_a(err == DB_SUCCESS);
+            /* Write out the externally stored
+            columns while still x-latching
+            index->lock and block->lock. Allocate
+            pages for big_rec in the mtr that
+            modified the B-tree, but be sure to skip
+            any pages that were freed in mtr. We will
+            write out the big_rec pages before
+            committing the B-tree mini-transaction. If
+            the system crashes so that crash recovery
+            will not replay the mtr_commit(&mtr), the
+            big_rec pages will be left orphaned until
+            the pages are allocated for something else.
+
+            TODO: If the allocation extends the tablespace, it
+            will not be redo logged, in either mini-transaction.
+            Tablespace extension should be redo-logged in the
+            big_rec mini-transaction, so that recovery will not
+            fail when the big_rec was written to the extended
+            portion of the file, in case the file was somehow
+            truncated in the crash. */
+
+            rec = btr_cur_get_rec(btr_cur);
+
+            err = btr_store_big_rec_extern_fields(
+                index, btr_cur_get_block(btr_cur), rec,
+                rec_get_offsets(rec, index, offsets_,
+                ULINT_UNDEFINED, &heap),
+                dummy_big_rec, mtr, BTR_STORE_UPDATE);
+
+            /* If writing big_rec fails (for example, because of
+            DB_OUT_OF_FILE_SPACE), the record will be corrupted.
+            Even if we did not update any externally stored
+            columns, our update could cause the record to grow so
+            that a non-updated column was selected for external
+            storage. This non-update would not have been written
+            to the undo log, and thus the record cannot be rolled
+            back.
+
+            However, because we have not executed mtr_commit(mtr)
+            yet, the update will not be replayed in crash
+            recovery, and the following assertion failure will
+            effectively "roll back" the operation. */
+            /* 只可能是磁盘空间不足导致断言 */
+            ut_a(err == DB_SUCCESS);
+
+            dtuple_big_rec_free(dummy_big_rec);
+        }
+
+        if (UNIV_LIKELY_NULL(heap)) {
+            mem_heap_free(heap);
 		}
 	}
 

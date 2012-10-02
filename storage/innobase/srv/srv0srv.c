@@ -121,6 +121,13 @@ dictionary tables are in the system tablespace 0 */
 UNIV_INTERN my_bool	srv_file_per_table;
 /** The file format to use on new *.ibd files. */
 UNIV_INTERN ulint	srv_file_format = 0;
+
+/* whether gcs is the default row format */
+UNIV_INTERN ibool	srv_is_gcs_default = 1;
+
+/* whether create gcs table use gcs real format */
+UNIV_INTERN my_bool	srv_create_use_gcs_real_format = FALSE;
+
 /** Whether to check file format during startup.  A value of
 DICT_TF_FORMAT_MAX + 1 means no checking ie. FALSE.  The default is to
 set it to the highest format we support. */

@@ -328,6 +328,8 @@ byte*
 trx_undo_rec_get_col_val(
 /*=====================*/
 	byte*	ptr,	/*!< in: pointer to remaining part of undo log record */
+    dict_index_t*   index,
+    ulint           pos,        
 	byte**	field,	/*!< out: pointer to stored field */
 	ulint*	len,	/*!< out: length of the field, or UNIV_SQL_NULL */
 	ulint*	orig_len)/*!< out: original length of the locally
@@ -338,12 +340,18 @@ trx_undo_rec_get_col_val(
 
 	*orig_len = 0;
 
-    ut_ad(*len != UNIV_SQL_DEFAULT);
+    //ut_ad(*len != UNIV_SQL_DEFAULT);
 
 	switch (*len) {
 	case UNIV_SQL_NULL:
 		*field = NULL;
 		break;
+    case UNIV_SQL_DEFAULT:
+        /* 该长度是(UNIV_SQL_NULL - 1), 因此不可能是(UNIV_EXTERN_STORAGE_FIELD + *len), 因为*len不可能等于UNIV_PAGE_SIZE - 1（恒小于页面一半） */
+        ut_a(pos != ULINT_UNDEFINED && dict_index_is_gcs_clust_after_alter_table(index));
+
+        *field = (byte*)dict_index_get_nth_col_def(index, pos, len);
+        break;
 	case UNIV_EXTERN_STORAGE_FIELD:
 		*orig_len = mach_read_compressed(ptr);
 		ptr += mach_get_compressed_size(*orig_len);
@@ -414,7 +422,8 @@ trx_undo_rec_get_row_ref(
 
 		dfield = dtuple_get_nth_field(*ref, i);
 
-		ptr = trx_undo_rec_get_col_val(ptr, &field, &len, &orig_len);
+        /* 主键值不可能是默认值 */
+		ptr = trx_undo_rec_get_col_val(ptr, index, ULINT_UNDEFINED, &field, &len, &orig_len);
 
 		dfield_set_data(dfield, field, len);
 	}
@@ -446,7 +455,7 @@ trx_undo_rec_skip_row_ref(
 		ulint	len;
 		ulint	orig_len;
 
-		ptr = trx_undo_rec_get_col_val(ptr, &field, &len, &orig_len);
+		ptr = trx_undo_rec_get_col_val(ptr, index, ULINT_UNDEFINED, &field, &len, &orig_len);
 	}
 
 	return(ptr);
@@ -695,9 +704,10 @@ trx_undo_page_report_modify(
 
 			/* Save the old value of field */
 			field = rec_get_nth_field(rec, offsets, pos, &flen);
-            if (flen == UNIV_SQL_DEFAULT) 
-                field = dict_index_get_nth_col_def(index, pos, &flen);
-
+//             if (flen == UNIV_SQL_DEFAULT) {             
+//                 field = dict_index_get_nth_col_def(index, pos, &flen);
+// 
+//             }
 			if (trx_undo_left(undo_page, ptr) < 15) {
 
 				return(0);
@@ -732,7 +742,7 @@ trx_undo_page_report_modify(
 				ptr += mach_write_compressed(ptr, flen);
 			}
 
-			if (flen != UNIV_SQL_NULL) {
+			if (flen != UNIV_SQL_NULL && flen != UNIV_SQL_DEFAULT) {
 				if (trx_undo_left(undo_page, ptr) < flen) {
 
 					return(0);
@@ -795,8 +805,8 @@ trx_undo_page_report_modify(
 				/* Save the old value of field */
 				field = rec_get_nth_field(rec, offsets, pos,
 							  &flen);
-                if (flen == UNIV_SQL_DEFAULT) 
-                    field = dict_index_get_nth_col_def(index, pos, &flen);
+//                 if (flen == UNIV_SQL_DEFAULT) 
+//                     field = dict_index_get_nth_col_def(index, pos, &flen);
 
 				if (rec_offs_nth_extern(offsets, pos)) {                /* 前缀索引列？ */
 					const dict_col_t*	col =
@@ -820,7 +830,7 @@ trx_undo_page_report_modify(
 						ptr, flen);
 				}
 
-				if (flen != UNIV_SQL_NULL) {
+				if (flen != UNIV_SQL_NULL && flen != UNIV_SQL_DEFAULT) {
 					if (trx_undo_left(undo_page, ptr)
 					    < flen) {
 
@@ -1021,7 +1031,7 @@ trx_undo_update_rec_get_update(
 
 		upd_field_set_field_no(upd_field, field_no, index, trx);
 
-		ptr = trx_undo_rec_get_col_val(ptr, &field, &len, &orig_len);
+		ptr = trx_undo_rec_get_col_val(ptr, index, field_no, &field, &len, &orig_len);
 
 		upd_field->orig_len = orig_len;
 
@@ -1097,7 +1107,8 @@ trx_undo_rec_get_partial_row(
 		col = dict_index_get_nth_col(index, field_no);
 		col_no = dict_col_get_no(col);
 
-		ptr = trx_undo_rec_get_col_val(ptr, &field, &len, &orig_len);
+        /* 用于获得索引列值，也可能是默认值 */
+		ptr = trx_undo_rec_get_col_val(ptr, index, field_no, &field, &len, &orig_len);
 
 		dfield = dtuple_get_nth_field(*row, col_no);
 

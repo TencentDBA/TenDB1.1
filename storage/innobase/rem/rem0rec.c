@@ -186,7 +186,7 @@ rec_get_n_extern_new(
         ulint field_count = 0;
         ulint n_nullable = 0;
 
-        ut_ad(dict_index_is_gcs_clust_after_alter_table(index));
+        ut_a(dict_index_is_gcs_clust_after_alter_table(index));
 
         field_count = rec_gcs_get_field_count(rec, &field_count_len);
         ut_ad(field_count_len == rec_gcs_get_feild_count_len(field_count));
@@ -327,7 +327,7 @@ rec_init_offsets_comp_ordinary(
             gcs¼ÇÂ¼
         */
         ulint           field_count_len;
-        ut_ad(dict_index_is_gcs_clust_after_alter_table(index));
+        ut_a(dict_index_is_gcs_clust_after_alter_table(index));
         ut_ad(extra == REC_N_NEW_EXTRA_BYTES);
 
 
@@ -531,7 +531,7 @@ rec_init_offsets(
             */
             ulint           field_count_len;
             ulint           field_count_for_gcs;
-            ut_ad(dict_index_is_gcs_clust_after_alter_table(index));
+            ut_a(dict_index_is_gcs_clust_after_alter_table(index));
 
             field_count_for_gcs = rec_gcs_get_field_count(rec, &field_count_len);
             ut_ad(rec_offs_n_fields(offsets) - 1 <= field_count_for_gcs);               /* 1 for node ptr */
@@ -1702,7 +1702,7 @@ rec_copy_prefix_to_buf(
         ulint field_count = 0;
         ulint n_nullable = 0;
 
-        ut_ad(dict_index_is_gcs_clust_after_alter_table(index));
+        ut_a(dict_index_is_gcs_clust_after_alter_table(index));
 
         field_count = rec_gcs_get_field_count(rec, &field_count_len);
         ut_ad(field_count_len == rec_gcs_get_feild_count_len(field_count));
