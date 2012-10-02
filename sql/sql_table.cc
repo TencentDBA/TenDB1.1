@@ -3876,7 +3876,8 @@ static bool check_if_created_table_can_be_opened(THD *thd,
     (void) closefrm(&table, 0);
 
   free_table_share(&share);
-  (void) file->ha_create_handler_files(path, NULL, CHF_DELETE_FLAG, create_info);
+  /* TODO:GCS  for test here */
+//  (void) file->ha_create_handler_files(path, NULL, CHF_DELETE_FLAG, create_info);
   return result;
 }
 
@@ -5954,12 +5955,10 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
         */
 	
 		if(alter_info->flags & ~(ALTER_ADD_COLUMN|ALTER_ADD_INDEX|ALTER_OPTIONS) ||  		  
-		  create_info->options     ||    
-		  (create_info->other_options & HA_LEX_CREATE_WITH_PARTITION)){    
+		  create_info->options ){    
                /* 
                 1.no other alter op allowed 
-                2.no create options allowd,include HA_LEX_CREATE_TMP_TABLE
-                3.check if the  table is partition table 
+                2.no create options allowd,include HA_LEX_CREATE_TMP_TABLE               
                */
             goto err;
         }      

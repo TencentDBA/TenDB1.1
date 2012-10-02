@@ -46,6 +46,7 @@ extern "C" {
 }
 
 #include "ha_innodb.h"
+#include "ha_partition.h"
 
 
 /*************************************************************//**
@@ -2499,13 +2500,10 @@ ha_innobase::inplace_alter_table(
     TABLE*                  tmp_table,
 	Alter_inplace_info*	    ha_alter_info)
 {
-    trx_t*                  user_trx;
-    THD*			        thd;
-    trx_t*                  trx;
+    
+    THD*			        thd;   
     ulint                   err = DB_ERROR;
-    char                    norm_name[1000];
-    dict_table_t            *dict_table;
-    mem_heap_t*             heap;
+    char                    norm_name[FN_REFLEN];   
 
     DBUG_ENTER("inplace_alter_table");
 
@@ -2519,19 +2517,173 @@ ha_innobase::inplace_alter_table(
     ut_print_timestamp(stderr);
     fprintf(stderr, "  [InnoDB inplace alter table]  start, query: %s; db_name:%s; tmp_name: %s \n", ha_query(), table->s->db.str, tmp_table->alias);
 
+#ifdef WITH_PARTITION_STORAGE_ENGINE
+	if(table->part_info){
+		DBUG_RETURN(inplace_alter_partition(table,tmp_table,ha_alter_info));
+	}
+#endif
+
     /* Get the transaction associated with the current thd, or create one
 	if not yet created */
 
     normalize_table_name(norm_name, table->s->normalized_path.str);
 
-    dict_table = dict_table_get(norm_name, FALSE);
+	err = inplace_alter_one_table(table,tmp_table,ha_alter_info,norm_name);
+
+
+ //   dict_table = dict_table_get(norm_name, FALSE);
+ //   if (dict_table == NULL)
+ //   {
+ //       push_warning_printf(
+ //           (THD*) thd,
+ //           MYSQL_ERROR::WARN_LEVEL_WARN,
+ //           ER_CANT_CREATE_TABLE,
+ //           "table %s doesn't exist %s %d", norm_name, __FILE__, __LINE__);
+
+ //       goto error;
+ //   }
+
+ //   heap = mem_heap_create(1024);
+ //   if (heap == NULL)
+ //   {
+ //       push_warning_printf(
+ //           (THD*) thd,
+ //           MYSQL_ERROR::WARN_LEVEL_WARN,
+ //           ER_CANT_CREATE_TABLE,
+ //           "mem_heap_create error %s %d", __FILE__, __LINE__);
+
+ //       goto error;
+ //   }
+
+	//user_trx = check_trx_exists(thd);
+
+	///* In case MySQL calls this in the middle of a SELECT query, release
+	//possible adaptive hash latch to avoid deadlocks of threads */
+
+	//trx_search_latch_release_if_reserved(user_trx);
+
+ //   trx_start_if_not_started(user_trx);
+
+	///* 创建一个后台事务，用于字典操作. */
+	//trx = innobase_trx_allocate(thd);
+	//trx_start_if_not_started(trx);
+ //   
+ //   /* Flag this transaction as a dictionary operation, so that
+	//the data dictionary will be locked in crash recovery. */
+ //   trx_set_dict_operation(trx, TRX_DICT_OP_INDEX);
+
+ //   /* 全局字段锁 */
+ //   row_mysql_lock_data_dictionary(trx);
+
+ //   if (ha_alter_info->handler_flags == Alter_inplace_info::ADD_COLUMN_FLAG)  /* 仅加简单列操作 */
+ //   {
+ //       err = innobase_add_columns_simple(heap, trx, dict_table, tmp_table, ha_alter_info);
+ //   }
+	//else if(ha_alter_info->handler_flags == Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG)
+	//{
+	//	//fast alter table row format! 
+ //       err = innobase_alter_row_format_simple(heap,trx,dict_table,tmp_table,ha_alter_info,
+ //               is_support_fast_rowformat_change(tmp_table->s->row_type,get_row_type()));
+	//	
+	//}else{
+ //       ut_ad(FALSE);
+ //       //to do 暂时断言
+ //   }
+ //   
+ //   /* 成功就提交，否则回滚 */
+ //   if (err == DB_SUCCESS)
+ //   {
+ //       trx_commit_for_mysql(trx);
+
+ //       /* inplace alter table commit日志 */
+ //       ut_print_timestamp(stderr);
+ //       fprintf(stderr, "  [InnoDB inplace alter table]  commit, query: %s; db_name:%s; tmp_name: %s \n", ha_query(), table->s->db.str, tmp_table->alias);
+ //   }
+ //   else
+ //   {
+ //       trx_rollback_for_mysql(trx);
+
+ //       /* inplace alter table rollback日志 */
+ //       ut_print_timestamp(stderr);
+ //       fprintf(stderr, "  [InnoDB inplace alter table]  rollback, error no : %ul,  query: %s; db_name:%s; tmp_name: %s \n", err, ha_query(), table->s->db.str, tmp_table->alias);
+ //   }
+
+ //   /* 锁什么时候释放 */
+
+
+ //   //dict_table_remove_from_cache(dict_table);
+
+ //   row_mysql_unlock_data_dictionary(trx);
+
+ //   trx_free_for_mysql(trx);
+
+ //   trx_commit_for_mysql(user_trx);
+
+	///* Flush the log to reduce probability that the .frm files and
+	//the InnoDB data dictionary get out-of-sync if the user runs
+	//with innodb_flush_log_at_trx_commit = 0 */
+
+	//log_buffer_flush_to_disk();
+
+	///* Tell the InnoDB server that there might be work for
+	//utility threads: */
+
+	//srv_active_wake_master_thread();
+
+ //   mem_heap_free(heap);
+
+// func_exit:
+// 	if (err == 0 && (ha_alter_info->create_info->used_fields
+// 			 & HA_CREATE_USED_AUTO)) {
+// 		dict_table_autoinc_lock(prebuilt->table);
+// 		dict_table_autoinc_initialize(
+// 			prebuilt->table,
+// 			ha_alter_info->create_info->auto_increment_value);
+// 		dict_table_autoinc_unlock(prebuilt->table);
+// 	}
+// 
+// ret:
+// 	if (err == 0) {
+// 		MONITOR_ATOMIC_DEC(MONITOR_PENDING_ALTER_TABLE);
+// 	}
+// 	DBUG_RETURN(err != 0);
+
+
+    DBUG_RETURN(err);
+}
+
+
+
+/* fast alter one innodb table */
+
+UNIV_INTERN
+int
+ha_innobase::inplace_alter_one_table(
+	/*=============================*/
+	TABLE*			        table,
+	TABLE*                 tmp_table,
+	Alter_inplace_info*	ha_alter_info,
+	const char*			table_name
+								 )
+{
+	trx_t*                  user_trx;
+	THD*			        thd;
+	trx_t*                  trx;
+	ulint                   err = DB_ERROR;
+	dict_table_t            *dict_table;
+	mem_heap_t*             heap;
+	DBUG_ENTER("inplace_alter_one_table");
+
+	thd = ha_thd();
+
+	dict_table = dict_table_get(table_name, FALSE);
     if (dict_table == NULL)
     {
         push_warning_printf(
             (THD*) thd,
             MYSQL_ERROR::WARN_LEVEL_WARN,
             ER_CANT_CREATE_TABLE,
-            "table %s doesn't exist %s %d", norm_name, __FILE__, __LINE__);
+            "table %s doesn't exist %s %d", table_name, __FILE__, __LINE__);
 
         goto error;
     }
@@ -2624,26 +2776,171 @@ ha_innobase::inplace_alter_table(
 	srv_active_wake_master_thread();
 
     mem_heap_free(heap);
-
-// func_exit:
-// 	if (err == 0 && (ha_alter_info->create_info->used_fields
-// 			 & HA_CREATE_USED_AUTO)) {
-// 		dict_table_autoinc_lock(prebuilt->table);
-// 		dict_table_autoinc_initialize(
-// 			prebuilt->table,
-// 			ha_alter_info->create_info->auto_increment_value);
-// 		dict_table_autoinc_unlock(prebuilt->table);
-// 	}
-// 
-// ret:
-// 	if (err == 0) {
-// 		MONITOR_ATOMIC_DEC(MONITOR_PENDING_ALTER_TABLE);
-// 	}
-// 	DBUG_RETURN(err != 0);
-
 error:
-    err = convert_error_code_to_mysql(err, 0, NULL);
+	err = convert_error_code_to_mysql(err, 0, NULL);
 
-    DBUG_RETURN(err);
+	DBUG_RETURN(err);
+
 }
+
+
+
+UNIV_INTERN
+int
+ha_innobase::inplace_alter_partition(
+/*=============================*/
+	TABLE*			        table,
+    TABLE*                  tmp_table,
+	Alter_inplace_info*	    ha_alter_info)
+{	
+	THD*			        thd;	
+	ulint                   err = DB_ERROR;	
+	int						save_err = 0;	
+	char					path_name[FN_REFLEN],name_buff[FN_REFLEN];
+	char *					from_path;
+
+
+	List_iterator<partition_element> part_it(table->part_info->partitions);
+	partition_element *part_elem, *sub_elem;
+	bool is_sub_part = table->part_info->is_sub_partitioned();;
+	uint num_parts   = table->part_info->partitions.elements;
+	uint num_subparts= table->part_info->num_subparts;
+
+	//for count partition
+	uint idx;
+
+	//for count subpartition
+	uint sub_idx;
+
+	DBUG_ENTER("inplace_alter_table");
+
+	thd = ha_thd();	
+
+	DBUG_ASSERT(check_if_supported_inplace_alter(thd, table, ha_alter_info));
+
+	/* must get partition info */
+	ut_a(table->part_info);
+
+	/* inplace alter table 开始日志 */
+	ut_print_timestamp(stderr);
+	fprintf(stderr, "  [PARTITION inplace alter table]  start, query: %s; db_name:%s; tmp_name: %s \n",
+		ha_query(), table->s->db.str, tmp_table->alias);
+
+	//p_file = m_file;
+	
+	//get the full path to path_name
+	//strmov(path_name,table->s->path.str);
+	//from_path = get_canonical_filename(*p_file,path_name,from_lc_buff);
+	normalize_table_name(path_name, table->s->normalized_path.str);
+	from_path = path_name;
+	
+	// start to proccess each partition
+	idx = 0;
+	do{
+		//create_partition_name(name_buff, from_path, name_buffer_ptr, NORMAL_PART_NAME,			FALSE);
+		part_elem= part_it++;
+		if(is_sub_part){
+			List_iterator<partition_element> sub_it(part_elem->subpartitions);
+			sub_idx=0;
+			do{
+				sub_elem= sub_it++;
+				create_subpartition_name(name_buff, from_path,
+					part_elem->partition_name,
+					sub_elem->partition_name,
+					NORMAL_PART_NAME);
+				normalize_table_name(name_buff,name_buff);
+
+				err = inplace_alter_one_table(table,tmp_table,ha_alter_info,name_buff);
+
+				if(err)
+					save_err=err;
+			}while(++sub_idx < num_subparts);
+
+		}
+		else{
+			create_partition_name(name_buff, from_path, part_elem->partition_name, NORMAL_PART_NAME,FALSE);
+			normalize_table_name(name_buff,name_buff);
+			
+			err = inplace_alter_one_table(table,tmp_table,ha_alter_info,name_buff);
+
+			if(err)
+				save_err=err;
+
+			/*dict_table = dict_table_get(name_buff, FALSE);
+
+			if (dict_table == NULL)
+			{
+				push_warning_printf(
+					(THD*) thd,
+					MYSQL_ERROR::WARN_LEVEL_WARN,
+					ER_CANT_CREATE_TABLE,
+					"table %s doesn't exist %s %d", name_buff, __FILE__, __LINE__);
+
+				goto error;
+			}
+
+			heap = mem_heap_create(1024);
+			if (heap == NULL)
+			{
+				push_warning_printf(
+					(THD*) thd,
+					MYSQL_ERROR::WARN_LEVEL_WARN,
+					ER_CANT_CREATE_TABLE,
+					"mem_heap_create error %s %d", __FILE__, __LINE__);
+
+				goto error;
+			}*/			
+
+
+		}
+		
+		
+	}while(++idx<num_parts);
+
+
+	DBUG_RETURN(save_err);
+}
+
+
+
+#ifdef WITH_PARTITION_STORAGE_ENGINE
+
+/*
+	determine whether the partition table support fast inplace alter table	
+	
+	return value
+	
+	false:		not support 
+	true :		support
+*/
+bool
+ha_partition::check_if_supported_inplace_alter(
+	/*==========================================*/
+	THD                     *thd,
+	TABLE                   *table,
+	Alter_inplace_info     	*inplace_info
+	){
+		DBUG_ENTER("check_if_supported_inplace_alter");	
+
+		/* give it to the handler to judge TODO:GCS here should have a while for all innodb table. */
+		bool ret = (*m_file)->check_if_supported_inplace_alter(thd,table,inplace_info);
+		DBUG_RETURN(ret);	
+}
+
+/* partition inplace alter table */
+UNIV_INTERN
+int
+ha_partition::inplace_alter_table(
+								 /*=============================*/
+								 TABLE*			        table,
+								 TABLE*                  tmp_table,
+								 Alter_inplace_info*	    ha_alter_info)
+{
+	DBUG_ENTER("inplace_alter_table");
+	DBUG_RETURN((*m_file)->inplace_alter_table(table,tmp_table,ha_alter_info));
+	
+}
+
+#endif
+
 

@@ -7179,9 +7179,9 @@ ha_innobase::create(
 			ER_ILLEGAL_HA_CREATE_OPTION,
 			"InnoDB: assuming ROW_FORMAT=GCS.");
 	case ROW_TYPE_DEFAULT:
-        if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE) && !(create_info->other_options & HA_LEX_CREATE_WITH_PARTITION))  
+        if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE))  
         {
-            is_gcs = TRUE;                              /* 非临时表,分区表,设置为 gcs row_format,否则设置为compact  */
+            is_gcs = TRUE;                              /* 非临时表和分区表,设置为 gcs row_format,否则设置为compact  */
         }
 	case ROW_TYPE_COMPACT:
 		flags = DICT_TF_COMPACT;
@@ -7190,7 +7190,7 @@ ha_innobase::create(
     case ROW_TYPE_GCS:   
         /* for GCS row_format */
 
-        if ((create_info->options & HA_LEX_CREATE_TMP_TABLE) || (create_info->other_options & HA_LEX_CREATE_WITH_PARTITION))
+        if ((create_info->options & HA_LEX_CREATE_TMP_TABLE) )
         {
             /* error: cannot create a table of gcs row_format for tmp_table or partition_table */
             /*push_warning(
