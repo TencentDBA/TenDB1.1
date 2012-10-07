@@ -268,6 +268,8 @@ public:
 	  TABLE*			        table,
 	  TABLE*                  tmp_table,
 	  Alter_inplace_info*	    ha_alter_info);
+
+  const char* get_row_type_str_for_gcs() const;
 private:
   int prepare_for_rename();
   int copy_partitions(ulonglong * const copied, ulonglong * const deleted);

@@ -2726,10 +2726,17 @@ ha_innobase::inplace_alter_one_table(
     }
 	else if(ha_alter_info->handler_flags == Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG)
 	{
-		//fast alter table row format! 
-        err = innobase_alter_row_format_simple(heap,trx,dict_table,tmp_table,ha_alter_info,
-                is_support_fast_rowformat_change(tmp_table->s->row_type,get_row_type()));
-		
+		//fast alter table row format!  
+		//TODO:(GCS) get_row_type should with partition option
+        // err = innobase_alter_row_format_simple(heap,trx,dict_table,tmp_table,ha_alter_info,
+        //        is_support_fast_rowformat_change(tmp_table->s->row_type,get_row_type()));
+		/*
+			here we donnot use get_row_type because this func read the prebuilt->table's flags,
+			but for partition table this table is just the first partition! so we'll got a wrong result!
+		*/
+		err = innobase_alter_row_format_simple(heap,trx,dict_table,tmp_table,ha_alter_info,
+			is_support_fast_rowformat_change(tmp_table->s->row_type,get_table_row_type(dict_table)));
+
 	}else{
         ut_ad(FALSE);
         //to do ÔÝÊ±¶ÏÑÔ
@@ -2921,10 +2928,22 @@ ha_partition::check_if_supported_inplace_alter(
 	Alter_inplace_info     	*inplace_info
 	){
 		DBUG_ENTER("check_if_supported_inplace_alter");	
+		handler ** file;
 
-		/* give it to the handler to judge TODO:GCS here should have a while for all innodb table. */
-		bool ret = (*m_file)->check_if_supported_inplace_alter(thd,table,inplace_info);
-		DBUG_RETURN(ret);	
+		/* give it to the handler to judge  */
+		bool is_support = (*m_file)->check_if_supported_inplace_alter(thd,table,inplace_info);
+		for(file=m_file,file++; *file;file++){
+			bool ret = (*file)->check_if_supported_inplace_alter(thd,table,inplace_info);
+
+			/* 
+			if there is some partition donot support inplace alter,return false
+			but this seems should never happen at this version,unless some partition got something wrong..
+			*/
+			if(is_support != ret)
+				DBUG_RETURN(false);
+		}		
+		
+		DBUG_RETURN(is_support);	
 }
 
 /* partition inplace alter table */
@@ -2939,6 +2958,17 @@ ha_partition::inplace_alter_table(
 	DBUG_ENTER("inplace_alter_table");
 	DBUG_RETURN((*m_file)->inplace_alter_table(table,tmp_table,ha_alter_info));
 	
+}
+
+UNIV_INTERN
+const char* 
+ha_partition::get_row_type_str_for_gcs() const
+{
+	DBUG_ENTER("get_row_type_str_for_gcs");
+
+	/* TODO:(GCS) if here shoud to judge other partition? 
+	they must be the same.so here we return the first partition's row_format status. */
+	DBUG_RETURN((*m_file)->get_row_type_str_for_gcs());
 }
 
 #endif

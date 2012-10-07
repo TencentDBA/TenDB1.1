@@ -160,6 +160,9 @@ class ha_innobase: public handler
 	  ROW_TYPE_NOT_USED, the information in HA_CREATE_INFO should be used.
 	*/
 	enum row_type get_row_type() const;
+
+	enum row_type get_table_row_type(const dict_table_t* dict_table) const;
+
     const char* get_row_type_str_for_gcs() const;
 
 	const char* table_type() const;
