@@ -160,6 +160,9 @@ class ha_innobase: public handler
 	  ROW_TYPE_NOT_USED, the information in HA_CREATE_INFO should be used.
 	*/
 	enum row_type get_row_type() const;
+
+	enum row_type get_table_row_type(const dict_table_t* dict_table) const;
+
     const char* get_row_type_str_for_gcs() const;
 
 	const char* table_type() const;
@@ -278,10 +281,25 @@ class ha_innobase: public handler
 	  enum row_type old_type
 	  );
 
+	/* fast alter table for innodb table */
 	int inplace_alter_table(
 		TABLE*			altered_table,
         TABLE*          tmp_table,
 		Alter_inplace_info*	ha_alter_info);
+
+
+	/* innodb alter table for patition */
+	int inplace_alter_partition(
+		TABLE*			altered_table,
+		TABLE*          tmp_table,
+		Alter_inplace_info*	ha_alter_info);
+
+	/* fast alter one innodb table by TABLE_NAME and ALTER_INFO */
+	int inplace_alter_one_table(
+		TABLE*			altered_table,
+		TABLE*          tmp_table,
+		Alter_inplace_info*	ha_alter_info,
+		const char*		table_name);
 
 	bool check_if_incompatible_data(HA_CREATE_INFO *info,
 					uint table_changes);

@@ -3195,6 +3195,45 @@ ha_innobase::get_row_type() const
 	return(ROW_TYPE_NOT_USED);
 }
 
+
+UNIV_INTERN
+enum row_type
+ha_innobase::get_table_row_type(const dict_table_t* dict_table) const
+/*=============================*/
+{
+	ut_a(dict_table);
+
+	const ulint	flags = dict_table->flags;
+
+	/* check if GCS type*/      
+	if(dict_table_is_gcs(dict_table)){
+		return (ROW_TYPE_GCS);
+	}
+
+	if (UNIV_UNLIKELY(!flags)) {
+		return(ROW_TYPE_REDUNDANT);
+	}
+
+	ut_ad(flags & DICT_TF_COMPACT);
+
+	switch (flags & DICT_TF_FORMAT_MASK) {
+		case DICT_TF_FORMAT_51 << DICT_TF_FORMAT_SHIFT:
+			return(ROW_TYPE_COMPACT);
+		case DICT_TF_FORMAT_ZIP << DICT_TF_FORMAT_SHIFT:
+			if (flags & DICT_TF_ZSSIZE_MASK) {
+				return(ROW_TYPE_COMPRESSED);
+			} else {
+				return(ROW_TYPE_DYNAMIC);
+			}
+#if DICT_TF_FORMAT_ZIP != DICT_TF_FORMAT_MAX
+# error "DICT_TF_FORMAT_ZIP != DICT_TF_FORMAT_MAX"
+#endif
+	}
+
+	return(ROW_TYPE_NOT_USED);
+}
+
+
 UNIV_INTERN
 const char*
 ha_innobase::get_row_type_str_for_gcs() const
@@ -7220,7 +7259,7 @@ ha_innobase::create(
 			ER_ILLEGAL_HA_CREATE_OPTION,
 			"InnoDB: assuming ROW_FORMAT=GCS.");
 	case ROW_TYPE_DEFAULT:
-        if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE) && !(create_info->other_options & HA_LEX_CREATE_WITH_PARTITION))  
+        if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE))  
         {
             /* 指定GCS为默认格式时，默认为GCS表 */
             if (srv_is_gcs_default)
@@ -7235,7 +7274,7 @@ ha_innobase::create(
     case ROW_TYPE_GCS:   
         /* for GCS row_format */
 
-        if ((create_info->options & HA_LEX_CREATE_TMP_TABLE) || (create_info->other_options & HA_LEX_CREATE_WITH_PARTITION))
+        if ((create_info->options & HA_LEX_CREATE_TMP_TABLE) )
         {
             /* error: cannot create a table of gcs row_format for tmp_table or partition_table */
             /*push_warning(
