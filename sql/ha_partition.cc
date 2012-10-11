@@ -1310,6 +1310,20 @@ int ha_partition::prepare_new_partition(TABLE *tbl,
   if ((error= set_up_table_before_create(tbl, part_name, create_info,
                                          0, p_elem)))
     goto error_create;
+  
+  /* 
+    GCS: here we need to SET a flag for new added partition that if the table \
+    have been fast added columns, all the partition's row_format is real GCS,so the newly created \
+    partition(s) should have the same row_format. we SET a flag HA_CREATE_USE_REAL_GCS_FORMAT \
+    to create_info->other_options. At the SE level when create table,if we got this flag,we create \
+    new table with REAL GCS ROW_FORMAT.
+  */
+
+  if(tbl->file->get_if_row_fast_altered()){
+      create_info->other_options |= HA_CREATE_USE_REAL_GCS_FORMAT;
+  }
+  
+
   if ((error= file->ha_create(part_name, tbl, create_info)))
   {
     /*
@@ -7357,6 +7371,138 @@ int ha_partition::indexes_are_disabled(void)
       break;
   }
   return error;
+}
+
+
+/*
+	determine whether the partition table support fast inplace alter table	
+	
+	return value
+	
+	false:		not support 
+	true :		support
+*/
+bool
+ha_partition::check_if_supported_inplace_alter(
+	/*==========================================*/
+	THD                     *thd,
+	TABLE                   *table,
+	Alter_inplace_info     	*inplace_info
+	){
+		DBUG_ENTER("check_if_supported_inplace_alter");	
+        handler ** file;
+        bool    is_support;
+
+        for(file=m_file; *file;file++){
+            is_support = (*file)->check_if_supported_inplace_alter(thd,table,inplace_info);
+            /* if there is some partition donot support inplace alter,return false
+            but this seems should never happen at this version,unless some partition got something wrong..  */
+            if(!is_support) 
+                DBUG_RETURN(is_support);
+
+        }	
+
+        DBUG_RETURN(is_support);	
+}
+
+/* partition inplace alter table */
+int
+ha_partition::inplace_alter_table(
+								 /*=============================*/
+								 TABLE*			        table,
+								 TABLE*                 tmp_table,
+								 Alter_inplace_info*	ha_alter_info,
+                                 const char*	        table_name)
+{	
+    int save_error =0;
+    int error;
+    char path_name[FN_REFLEN],name_buff[FN_REFLEN];
+    char *name_buffer_ptr;
+    const char *from_path;  
+    handler **file, **abort_file;
+    uint i;
+
+    DBUG_ENTER("inplace_alter_table");
+
+    DBUG_ASSERT(table->part_info);
+    if(ha_alter_info->create_info &&
+        ha_alter_info->create_info->options & HA_LEX_CREATE_TMP_TABLE){
+            my_error(ER_PARTITION_NO_TEMPORARY, MYF(0));
+            DBUG_RETURN(TRUE);
+    }
+
+    if (get_from_handler_file(table_name, ha_thd()->mem_root, true))
+    //    DBUG_RETURN(TRUE);
+
+    DBUG_ASSERT(m_file_buffer);
+
+    name_buffer_ptr= m_name_buffer_ptr;
+    file= m_file;
+
+
+    from_path= get_canonical_filename(*file, table_name, path_name);
+
+    i=0;
+    do{
+        create_partition_name(name_buff,from_path,name_buffer_ptr,
+            NORMAL_PART_NAME,FALSE);
+        error = (*file)->inplace_alter_table(table,tmp_table,ha_alter_info,name_buff);
+        if(error)
+            goto alter_error;
+        name_buffer_ptr= strend(name_buffer_ptr) + 1;
+        i++;
+    }while(*(++file));
+
+
+alter_error:
+    /* some part meets error,so we try to roll back all the alter ops on parts already done */
+    name_buffer_ptr = m_name_buffer_ptr;
+    for(abort_file=file, file=m_file;file < abort_file;file++)
+    {
+        create_partition_name(name_buff,from_path,name_buffer_ptr,
+            NORMAL_PART_NAME,FALSE);
+        //undo the alter operation
+       // (void) (*file)->inplace_alter_table();
+        name_buffer_ptr= strend(name_buffer_ptr) + 1;
+    }    
+    DBUG_RETURN(error);	
+}
+
+const char* 
+ha_partition::get_row_type_str_for_gcs() const
+{
+	DBUG_ENTER("get_row_type_str_for_gcs");
+
+	/* TODO:(GCS) if here shoud to judge other partition? 
+	they must be the same.so here we return the first partition's row_format status. */
+
+    handler ** file;
+    const char * rf_str;
+
+    for(file=m_file; *file;file++){
+        rf_str = (*file)->get_row_type_str_for_gcs();
+    }	
+
+	DBUG_RETURN(rf_str);
+}
+
+/* 
+judge each partition if the parition had been altered before
+return true ;if all partition have been altered before
+return false ; other
+*/
+bool ha_partition::get_if_row_fast_altered() 
+{
+    handler **file;
+    bool is_altered;
+
+    for (file= m_file; *file; file++)
+    {
+        is_altered = (*file)->get_if_row_fast_altered();
+        if(!is_altered)
+            return false;
+    }
+    return true;
 }
 
 

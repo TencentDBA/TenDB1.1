@@ -3196,41 +3196,23 @@ ha_innobase::get_row_type() const
 }
 
 
+
+/****************************************************************//**
+Get if the table had been fast altered from the data dictionary.
+@return 
+false  never fast altered OR not gcs row_format
+true   the table had been fast altered
+*/
 UNIV_INTERN
-enum row_type
-ha_innobase::get_table_row_type(const dict_table_t* dict_table) const
+bool
+ha_innobase::get_if_row_fast_altered()
 /*=============================*/
 {
-	ut_a(dict_table);
-
-	const ulint	flags = dict_table->flags;
-
-	/* check if GCS type*/      
-	if(dict_table_is_gcs(dict_table)){
-		return (ROW_TYPE_GCS);
-	}
-
-	if (UNIV_UNLIKELY(!flags)) {
-		return(ROW_TYPE_REDUNDANT);
-	}
-
-	ut_ad(flags & DICT_TF_COMPACT);
-
-	switch (flags & DICT_TF_FORMAT_MASK) {
-		case DICT_TF_FORMAT_51 << DICT_TF_FORMAT_SHIFT:
-			return(ROW_TYPE_COMPACT);
-		case DICT_TF_FORMAT_ZIP << DICT_TF_FORMAT_SHIFT:
-			if (flags & DICT_TF_ZSSIZE_MASK) {
-				return(ROW_TYPE_COMPRESSED);
-			} else {
-				return(ROW_TYPE_DYNAMIC);
-			}
-#if DICT_TF_FORMAT_ZIP != DICT_TF_FORMAT_MAX
-# error "DICT_TF_FORMAT_ZIP != DICT_TF_FORMAT_MAX"
-#endif
-	}
-
-	return(ROW_TYPE_NOT_USED);
+    if (prebuilt && prebuilt->table) {
+        /* check if GCS type*/      
+        return (dict_table_is_gcs_after_alter_table(prebuilt->table));
+    }
+    return(false);
 }
 
 
@@ -6559,7 +6541,8 @@ create_table_def(
 					in the path, though); otherwise this
 					is NULL */
 	ulint		flags,		/*!< in: table flags */
-    ibool       is_gcs)
+    ibool       is_gcs,
+    ibool       is_gcs_real_format) /*!< in: if the table's row_format had beed altered(for gcs special!) */
 {
 	Field*		field;
 	dict_table_t*	table;
@@ -6595,6 +6578,10 @@ create_table_def(
 
     /* 新建gcs表，n_cols_before_alter视乎参数innodb_create_use_gcs_real_format */
     if (srv_create_use_gcs_real_format && is_gcs)
+        n_cols_before_alter = n_cols;
+
+    /* if top level asked to create the new table use REAL_GCS_FORMAT,use it */
+    if(is_gcs_real_format)
         n_cols_before_alter = n_cols;
 
 	/* We pass 0 as the space id, and determine at a lower level the space
@@ -7086,6 +7073,7 @@ ha_innobase::create(
 	size_t		stmt_len;
 	enum row_type	row_format;
     ibool       is_gcs = FALSE;
+    ibool       is_gcs_real_format = FALSE;
 
 	DBUG_ENTER("ha_innobase::create");
 
@@ -7320,6 +7308,10 @@ ha_innobase::create(
 		flags |= DICT_TF2_TEMPORARY << DICT_TF2_SHIFT;
 	}
 
+    if (create_info->other_options & HA_CREATE_USE_REAL_GCS_FORMAT){
+        is_gcs_real_format = TRUE;
+    }
+
 	/* Get the transaction associated with the current thd, or create one
 	if not yet created */
 
@@ -7340,7 +7332,7 @@ ha_innobase::create(
 
 	error = create_table_def(trx, form, norm_name,
 		create_info->options & HA_LEX_CREATE_TMP_TABLE ? name2 : NULL,
-		flags, is_gcs);
+		flags, is_gcs,is_gcs_real_format);
 
 	if (error) {
 		goto cleanup;

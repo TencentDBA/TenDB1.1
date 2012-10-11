@@ -305,6 +305,7 @@ enum enum_alter_inplace_result {
 
     /* create flags of create table */
 #define HA_LEX_CREATE_WITH_PARTITION (1L << 3)
+#define HA_CREATE_USE_REAL_GCS_FORMAT (1L << 4)
 
 
 
@@ -1739,6 +1740,11 @@ public:
 
   virtual const char* get_row_type_str_for_gcs() const { return "Gcs"; }
 
+  /*
+    use the judge if the table's SE level table(s) had been fast altered before.
+  */
+  virtual bool  get_if_row_fast_altered()  { return false; }
+
   virtual const char *index_type(uint key_number) { DBUG_ASSERT(0); return "";}
 
 
@@ -2219,10 +2225,11 @@ public:
   }
 
 
-
+/* fast alter table by engine level table name */
  virtual int inplace_alter_table(TABLE *altered_table,
                                   TABLE *tmp_table,
-                                  Alter_inplace_info *ha_alter_info)
+                                  Alter_inplace_info *ha_alter_info,
+                                  const char*			table_name)
  { return -1; }
 
 
@@ -2252,9 +2259,10 @@ public:
  */
  int ha_inplace_alter_table(TABLE *altered_table,
                              TABLE *tmp_table,
-                             Alter_inplace_info *ha_alter_info)
+                             Alter_inplace_info *ha_alter_info,
+                             const char*	     table_name)
  {
-   return inplace_alter_table(altered_table, tmp_table, ha_alter_info);
+   return inplace_alter_table(altered_table, tmp_table, ha_alter_info, table_name);
  }
 
 

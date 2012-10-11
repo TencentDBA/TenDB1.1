@@ -266,10 +266,12 @@ public:
   int ha_partition::inplace_alter_table(
 	  /*=============================*/
 	  TABLE*			        table,
-	  TABLE*                  tmp_table,
-	  Alter_inplace_info*	    ha_alter_info);
+	  TABLE*                    tmp_table,
+	  Alter_inplace_info*	    ha_alter_info,
+      const char*	            table_name);
 
   const char* get_row_type_str_for_gcs() const;
+  bool get_if_row_fast_altered();
 private:
   int prepare_for_rename();
   int copy_partitions(ulonglong * const copied, ulonglong * const deleted);

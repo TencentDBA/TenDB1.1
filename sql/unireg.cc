@@ -530,13 +530,6 @@ int rea_create_table(THD *thd, const char *path,
                                      create_info) ||
        ha_create_table(thd, path, db, table_name, create_info, 0)))
     goto err_handler;
-  else{
-	  /* 
-		frm_only: we should create the par file for the PATITION table! 
-	  */
-	  if(file->ha_create_handler_files(path, NULL, CHF_CREATE_FLAG,create_info) )
-		  goto err_handler;
-  }
   DBUG_RETURN(0);
 
 err_handler:

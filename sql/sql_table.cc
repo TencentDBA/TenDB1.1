@@ -3876,8 +3876,11 @@ static bool check_if_created_table_can_be_opened(THD *thd,
     (void) closefrm(&table, 0);
 
   free_table_share(&share);
-  /* TODO:GCS  for test here */
-//  (void) file->ha_create_handler_files(path, NULL, CHF_DELETE_FLAG, create_info);
+  /* 
+    why delete here: this func is just for test the .frm file,and only called when create frm_only,
+    so here delete the par file is OK. the par file need to be generate before open the table.
+  */
+  (void) file->ha_create_handler_files(path, NULL, CHF_DELETE_FLAG, create_info);
   return result;
 }
 
@@ -6014,9 +6017,12 @@ mysql_inplace_alter_table(
 {
     int     err;
     DBUG_ENTER("mysql_inplace_alter_table");
+    char name_buff[FN_REFLEN];
+    const char * table_name;
 
+    table_name = get_canonical_filename(table->file,table->s->path.str,name_buff);
     
-    err = table->file->ha_inplace_alter_table(table, tmp_table, inplace_info);
+    err = table->file->ha_inplace_alter_table(table, tmp_table, inplace_info,table_name);
     
     if (err)
     {
@@ -6105,6 +6111,11 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     bool no_pk;
     Alter_inplace_info*     inplace_info = NULL;
 	TABLE*  tmp_table_for_inplace=NULL;
+
+    char filename[NAME_LEN+1];
+    int  filename_len;
+    handler * file = NULL;
+
     DBUG_ENTER("mysql_alter_table");
 
     /*
@@ -7087,9 +7098,8 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         b.如果执行成功
         1.上层开始做rename操作,将旧表rename为临时表,新表rename为旧表名字
         
-        */
-        char filename[NAME_LEN+1];
-        int  filename_len;
+        */        
+        
 
 		//should be ALTER_TABLE_METADATA_ONLY
         DBUG_ASSERT(need_copy_table == ALTER_TABLE_METADATA_ONLY);
@@ -7098,6 +7108,21 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
 		  inplace_info->create_info->used_fields == HA_CREATE_USED_ROW_FORMAT);
 
         filename_len = build_table_filename(filename, sizeof(filename) - 1, new_db, tmp_name, "", FN_IS_TMP);
+
+#ifdef WITH_PARTITION_STORAGE_ENGINE
+      
+        partition_info *part_info= thd->work_part_info;
+
+        /* for the tmp-table is only created with frm,so for partition table,we should create the .par file */
+        if(!(file= get_new_handler((TABLE_SHARE*) 0, thd->mem_root,inplace_info->create_info->db_type)))
+            goto err_new_table_cleanup;
+
+        if (!(file= get_ha_partition(part_info)) ||  (file->ha_create_handler_files(filename,NULL,CHF_CREATE_FLAG,inplace_info->create_info)))
+            goto err_new_table_cleanup;
+
+       
+
+#endif
 
 		/* note! here do not add the tmp_table to thread's temp table list */
         tmp_table_for_inplace = open_table_uncached(thd, filename, new_db, tmp_name, FALSE, false);
@@ -7201,7 +7226,16 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         (void) quick_rm_table(old_db_type, db, old_name, FN_IS_TMP);
 	}
 
+
 end_inplace_alter:
+
+#ifdef WITH_PARTITION_STORAGE_ENGINE
+    /* we should clear the .par file of temp table that created in inplace_alter_table */ 
+    if(file){
+        (void) file->ha_create_handler_files(filename,NULL,CHF_DELETE_FLAG,create_info);
+        delete file;
+    }
+#endif
 	if (tmp_table_for_inplace)
 	{
 	  /* auto clear fast alter table's tmp table */
@@ -7334,6 +7368,8 @@ end_temporary:
     DBUG_RETURN(FALSE);
 
 err_new_table_cleanup:
+    if(file)
+        delete file;
     if (new_table)
     {
         /* close_temporary_table() frees the new_table pointer. */

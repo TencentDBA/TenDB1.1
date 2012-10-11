@@ -544,7 +544,7 @@ rec_init_offsets(
             /*
             gcs表聚集索引，并且已经快速加字段
             */
-            ut_ad(index->n_nullable_before_alter >= 0); /* >0 BUG?  if the table just 1 col as primary key,it's 0! */
+            ut_ad(index->n_nullable_before_alter > 0);
             ut_ad(rec_offs_n_fields(offsets) - 1 <= index->n_fields_before_alter);
 
             nulls		= (byte*)rec - (REC_N_NEW_EXTRA_BYTES + 1);
