@@ -6576,10 +6576,6 @@ create_table_def(
 
 	n_cols = form->s->fields;
 
-    /* 新建gcs表，n_cols_before_alter视乎参数innodb_create_use_gcs_real_format */
-    if (srv_create_use_gcs_real_format && is_gcs)
-        n_cols_before_alter = n_cols;
-
     /* if top level asked to create the new table use REAL_GCS_FORMAT,use it */
     if(is_gcs_real_format)
         n_cols_before_alter = n_cols;
@@ -7308,7 +7304,12 @@ ha_innobase::create(
 		flags |= DICT_TF2_TEMPORARY << DICT_TF2_SHIFT;
 	}
 
-    if (create_info->other_options & HA_CREATE_USE_REAL_GCS_FORMAT){
+    /*     
+    1.if innodb_create_use_gcs_real_format is TRUE and the table to create is GCS,create as REAL GCS FORMAT
+    2.if HA_CREATE_USE_REAL_GCS_FORMAT flag is set int create_info->other_options,create as REAL GCS FORMAT
+    */
+    if ((srv_create_use_gcs_real_format && is_gcs)||
+        (create_info->other_options & HA_CREATE_USE_REAL_GCS_FORMAT)){
         is_gcs_real_format = TRUE;
     }
 

@@ -7473,16 +7473,14 @@ ha_partition::get_row_type_str_for_gcs() const
 {
 	DBUG_ENTER("get_row_type_str_for_gcs");
 
-	/* TODO:(GCS) if here shoud to judge other partition? 
-	they must be the same.so here we return the first partition's row_format status. */
+	/*  if here need to judge the other partitions? 
+	    they must be the same row_format. so here we just return the first partition's row_format. 
+    */
 
     handler ** file;
     const char * rf_str;
-
-    for(file=m_file; *file;file++){
-        rf_str = (*file)->get_row_type_str_for_gcs();
-    }	
-
+    file=m_file;
+    rf_str = (*file)->get_row_type_str_for_gcs();
 	DBUG_RETURN(rf_str);
 }
 

@@ -263,7 +263,7 @@ public:
 
 
   /* fast inplace alter partition table,we just support fast add column(s) yet */
-  int ha_partition::inplace_alter_table(
+  int inplace_alter_table(
 	  /*=============================*/
 	  TABLE*			        table,
 	  TABLE*                    tmp_table,

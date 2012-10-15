@@ -6112,9 +6112,9 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
     Alter_inplace_info*     inplace_info = NULL;
 	TABLE*  tmp_table_for_inplace=NULL;
 
-    char filename[NAME_LEN+1];
+    char tmp_filename[NAME_LEN+1];
     int  filename_len;
-    handler * file = NULL;
+    handler * h_file = NULL;
 
     DBUG_ENTER("mysql_alter_table");
 
@@ -7107,25 +7107,21 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
 		DBUG_ASSERT(inplace_info->handler_flags!=Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG||
 		  inplace_info->create_info->used_fields == HA_CREATE_USED_ROW_FORMAT);
 
-        filename_len = build_table_filename(filename, sizeof(filename) - 1, new_db, tmp_name, "", FN_IS_TMP);
+        filename_len = build_table_filename(tmp_filename, sizeof(tmp_filename) - 1, new_db, tmp_name, "", FN_IS_TMP);
 
 #ifdef WITH_PARTITION_STORAGE_ENGINE
-      
+        if(table->part_info){
         partition_info *part_info= thd->work_part_info;
 
-        /* for the tmp-table is only created with frm,so for partition table,we should create the .par file */
-        if(!(file= get_new_handler((TABLE_SHARE*) 0, thd->mem_root,inplace_info->create_info->db_type)))
+        /* for the tmp-table is only created with frm,so for partition table,we should create the .par file */    
+        if (!(h_file= get_ha_partition(part_info)) ||  (h_file->ha_create_handler_files(tmp_filename,NULL,CHF_CREATE_FLAG,inplace_info->create_info)))
             goto err_new_table_cleanup;
 
-        if (!(file= get_ha_partition(part_info)) ||  (file->ha_create_handler_files(filename,NULL,CHF_CREATE_FLAG,inplace_info->create_info)))
-            goto err_new_table_cleanup;
-
-       
-
+        }
 #endif
 
 		/* note! here do not add the tmp_table to thread's temp table list */
-        tmp_table_for_inplace = open_table_uncached(thd, filename, new_db, tmp_name, FALSE, false);
+        tmp_table_for_inplace = open_table_uncached(thd, tmp_filename, new_db, tmp_name, FALSE, false);
 		DBUG_ASSERT(tmp_table_for_inplace != NULL);
         
         /* innodb fast alter */
@@ -7231,9 +7227,9 @@ end_inplace_alter:
 
 #ifdef WITH_PARTITION_STORAGE_ENGINE
     /* we should clear the .par file of temp table that created in inplace_alter_table */ 
-    if(file){
-        (void) file->ha_create_handler_files(filename,NULL,CHF_DELETE_FLAG,create_info);
-        delete file;
+    if(h_file){
+        (void) h_file->ha_create_handler_files(tmp_filename,NULL,CHF_DELETE_FLAG,create_info);
+        delete h_file;
     }
 #endif
 	if (tmp_table_for_inplace)
@@ -7368,8 +7364,8 @@ end_temporary:
     DBUG_RETURN(FALSE);
 
 err_new_table_cleanup:
-    if(file)
-        delete file;
+    if(h_file)
+        delete h_file;
     if (new_table)
     {
         /* close_temporary_table() frees the new_table pointer. */
