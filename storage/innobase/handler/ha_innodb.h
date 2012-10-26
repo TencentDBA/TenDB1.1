@@ -287,6 +287,14 @@ class ha_innobase: public handler
 		Alter_inplace_info*	ha_alter_info,
         const char*	    table_name);
 
+    /* do some roll back when inplace alter table failed */
+    int final_inplace_alter_table(
+        TABLE                *altered_table,
+        TABLE               *tmp_table,
+        Alter_inplace_info  *ha_alter_info,
+        const char*         table_name,
+        bool                commit);
+
 	bool check_if_incompatible_data(HA_CREATE_INFO *info,
 					uint table_changes);   
 };

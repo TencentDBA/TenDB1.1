@@ -7123,6 +7123,11 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
 		/* note! here do not add the tmp_table to thread's temp table list */
         tmp_table_for_inplace = open_table_uncached(thd, tmp_filename, new_db, tmp_name, FALSE, false);
 		DBUG_ASSERT(tmp_table_for_inplace != NULL);
+
+        ALTER_INFO_BAK  alter_info_bak;
+        alter_info_bak.n_cols_before_alter_table = 0;
+        alter_info_bak.row_format_before_alter_table = ROW_TYPE_NOT_USED;
+        inplace_info->alter_info_bak = &alter_info_bak;
         
         /* innodb fast alter */
         if (mysql_inplace_alter_table(thd, table, tmp_table_for_inplace, inplace_info))

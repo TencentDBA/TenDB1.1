@@ -742,6 +742,20 @@ dict_mem_table_add_col_simple(
     ulint                   col_names_len       /*!< in: col_names的长度 */
 );
 
+/**********************************************************************//**
+直接对字典对象内存删除若干列 
+*/
+void
+dict_mem_table_drop_col_simple(
+    dict_table_t*           table,              /*!< in: 原表字典对象 */
+    dict_col_t*             col_arr,            /*!< in: 用户列字典对象,包含待删除列信息 */
+    ulint                   n_col,              /*!< in: 新表列的个数 */
+    char*                   col_names,          /*!< in: 用户列所有列名 */
+    ulint                   col_names_len,      /*!< in: col_names的长度 */  
+    uint                    n_cols_before_alter /*!< in: n_cols before alter,for rollback */
+);
+
+
 #ifndef UNIV_NONINL
 #include "dict0mem.ic"
 #endif

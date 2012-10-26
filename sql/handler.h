@@ -1101,6 +1101,15 @@ typedef struct st_ha_create_information
   enum enum_ha_unused unused2;
 } HA_CREATE_INFO;
 
+
+/*****************************************************************/
+/* backup some alter info before inplace alter table for rollback .
+*/
+typedef struct alter_info_bak_before_alter_struct{
+    uint   n_cols_before_alter_table;           /* 记录快速加字段前,表数据字典的n_cols_before_alter_table变量值,该值包含系统列 */
+    enum row_type row_format_before_alter_table;/* 记录快速修改分区前的ROW_FORMAT信息 */ 
+}ALTER_INFO_BAK;
+
 /*************************************** ADD FROM 5.6  ***************************************/
 
 /**
@@ -1276,6 +1285,9 @@ public:
 
   /** true for ALTER IGNORE TABLE ... */
   const bool ignore;
+
+  /* used for backup alter info before alter */
+  ALTER_INFO_BAK* alter_info_bak;
 
   Alter_inplace_info(
         HA_CREATE_INFO      *create_info_arg,
@@ -2231,6 +2243,16 @@ public:
                                   Alter_inplace_info *ha_alter_info,
                                   const char*			table_name)
  { return -1; }
+
+
+ /* finished the inplace alter table job, called after inplace_alter_table */
+ virtual int final_inplace_alter_table(TABLE                *altered_table,
+                                        TABLE               *tmp_table,
+                                        Alter_inplace_info  *ha_alter_info,
+                                        const char*         table_name,
+                                        bool                commit)
+ { return -1; }
+
 
 
  /**

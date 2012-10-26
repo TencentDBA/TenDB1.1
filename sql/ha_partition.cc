@@ -7389,7 +7389,7 @@ ha_partition::check_if_supported_inplace_alter(
 	TABLE                   *table,
 	Alter_inplace_info     	*inplace_info
 	){
-		DBUG_ENTER("check_if_supported_inplace_alter");	
+        DBUG_ENTER("ha_partition::check_if_supported_inplace_alter");	
         handler ** file;
         bool    is_support;
 
@@ -7422,7 +7422,7 @@ ha_partition::inplace_alter_table(
     handler **file, **abort_file;
     uint i;
 
-    DBUG_ENTER("inplace_alter_table");
+    DBUG_ENTER("ha_partition::inplace_alter_table");
 
     DBUG_ASSERT(table->part_info);
     if(ha_alter_info->create_info &&
@@ -7448,11 +7448,14 @@ ha_partition::inplace_alter_table(
             NORMAL_PART_NAME,FALSE);
         error = (*file)->inplace_alter_table(table,tmp_table,ha_alter_info,name_buff);
         if(error)
+        {
             goto alter_error;
+        }
         name_buffer_ptr= strend(name_buffer_ptr) + 1;
         i++;
     }while(*(++file));
 
+    DBUG_RETURN(error);
 
 alter_error:
     /* some part meets error,so we try to roll back all the alter ops on parts already done */
@@ -7462,7 +7465,7 @@ alter_error:
         create_partition_name(name_buff,from_path,name_buffer_ptr,
             NORMAL_PART_NAME,FALSE);
         //undo the alter operation
-       // (void) (*file)->inplace_alter_table();
+        (void) (*file)->final_inplace_alter_table(table,tmp_table,ha_alter_info,name_buff,FALSE);
         name_buffer_ptr= strend(name_buffer_ptr) + 1;
     }    
     DBUG_RETURN(error);	
@@ -7471,7 +7474,7 @@ alter_error:
 const char* 
 ha_partition::get_row_type_str_for_gcs() const
 {
-	DBUG_ENTER("get_row_type_str_for_gcs");
+    DBUG_ENTER("ha_partition::get_row_type_str_for_gcs");
 
 	/*  if here need to judge the other partitions? 
 	    they must be the same row_format. so here we just return the first partition's row_format. 

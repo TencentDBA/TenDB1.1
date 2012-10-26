@@ -1975,6 +1975,8 @@ typedef struct st_open_table_list{
 } OPEN_TABLE_LIST;
 
 
+
+
 static inline my_bitmap_map *tmp_use_all_columns(TABLE *table,
                                                  MY_BITMAP *bitmap)
 {

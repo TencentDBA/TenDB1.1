@@ -1743,7 +1743,8 @@ innobase_add_column_to_dictionary_for_gcs(
    ulint                    mtype,
    ulint                    prtype,
    ulint                    len,
-   trx_t*                   trx
+   trx_t*                   trx,
+   ibool                    iflag /* flag for add column in dict: true => add column, false => drop column */
 )
 {
     pars_info_t*	info;
@@ -1759,26 +1760,51 @@ innobase_add_column_to_dictionary_for_gcs(
     pars_info_add_int4_literal(info, "len", len);
 
     /* SYS_COLUMNS(table_id, pos, name, mtype, prtype, len, prec) */
-    error_no = que_eval_sql(
-        info,
-        "PROCEDURE ADD_SYS_COLUMNS_PROC () IS\n"
-        "BEGIN\n"
-        "INSERT INTO SYS_COLUMNS VALUES(:table_id, :pos,\n"
-        ":name, :mtype, :prtype, :len, 0);\n"
-        "END;\n",
-        FALSE, trx);
 
-    DBUG_EXECUTE_IF("ib_add_column_error",
-        error_no = DB_OUT_OF_FILE_SPACE;);
+    if(iflag){//add column
+        error_no = que_eval_sql(
+            info,
+            "PROCEDURE ADD_SYS_COLUMNS_PROC () IS\n"
+            "BEGIN\n"
+            "INSERT INTO SYS_COLUMNS VALUES(:table_id, :pos,\n"
+            ":name, :mtype, :prtype, :len, 0);\n"
+            "END;\n",
+            FALSE, trx);
 
-    if (error_no != DB_SUCCESS)
-    {
-        //for safe
-        push_warning_printf(
-            (THD*) trx->mysql_thd,
-            MYSQL_ERROR::WARN_LEVEL_WARN,
-            ER_CANT_CREATE_TABLE,
-            "ADD_SYS_COLUMNS_PROC error %s %d field_name(%s)", __FILE__, __LINE__, name);
+        DBUG_EXECUTE_IF("ib_add_column_error",
+            error_no = DB_OUT_OF_FILE_SPACE;);
+
+        if (error_no != DB_SUCCESS)
+        {
+            //for safe
+            push_warning_printf(
+                (THD*) trx->mysql_thd,
+                MYSQL_ERROR::WARN_LEVEL_WARN,
+                ER_CANT_CREATE_TABLE,
+                "ADD_SYS_COLUMNS_PROC error %s %d field_name(%s)", __FILE__, __LINE__, name);
+        }
+    }else{//drop column
+        error_no = que_eval_sql(
+            info,
+            "PROCEDURE DROP_SYS_COLUMNS_PROC () IS\n"
+            "BEGIN\n"
+            "DELETE FROM SYS_COLUMNS WHERE TABLE_ID=:table_id AND POS=:pos \n"
+            "AND NAME=:name;\n"
+            "END;\n",
+            FALSE, trx);
+
+        DBUG_EXECUTE_IF("ib_drop_column_error",
+            error_no = DB_OUT_OF_FILE_SPACE;);
+
+        if (error_no != DB_SUCCESS)
+        {
+            //for safe
+            push_warning_printf(
+                (THD*) trx->mysql_thd,
+                MYSQL_ERROR::WARN_LEVEL_WARN,
+                ER_CANT_CREATE_TABLE,
+                "DROP_SYS_COLUMNS_PROC error %s %d field_name(%s)", __FILE__, __LINE__, name);
+        }
     }
 
     return error_no;
@@ -1789,7 +1815,9 @@ ulint
 innobase_update_systable_n_cols_for_gcs(
     dict_table_t*               table,
     ulint                       new_n_field,
-    trx_t*                      trx
+    trx_t*                      trx,
+    ibool                       iflag,  /* true: add new column commit, false: add new column rollback. */
+    ulint                       n_cols_before_alter_bak /* if this func is called for rollback,this is the value of n_cols_before_alter*/
 )
 {
     pars_info_t*	info;
@@ -1804,15 +1832,28 @@ innobase_update_systable_n_cols_for_gcs(
 
     pars_info_add_int4_literal(info, "n_col", new_n_field | (1 << 31) | (1 << 30));
 
-    if (table->n_cols_before_alter_table > 0)
-    {
-        n_cols_before_alter = table->n_cols_before_alter_table - DATA_N_SYS_COLS;
-        ut_ad(n_cols_before_alter > 0);
-    }
-    else
-    {
-        /* 第一次alter table add column */
-        n_cols_before_alter = dict_table_get_n_cols(table) - DATA_N_SYS_COLS;
+    if(iflag){//fast add cols
+        if (table->n_cols_before_alter_table > 0)
+        {
+            n_cols_before_alter = table->n_cols_before_alter_table - DATA_N_SYS_COLS;
+            ut_ad(n_cols_before_alter > 0);
+        }
+        else
+        {
+            /* first time alter table add column */
+            n_cols_before_alter = dict_table_get_n_cols(table) - DATA_N_SYS_COLS;
+        }
+    }else{
+        /*  for rollback when alter error 
+            如果n_cols_before_alter_bak为0,则置底层为0,表示快速加字段前,该表没有加过字段;
+            否则需要将该值减去系统列信息,底层存储该值时不包含系统列信息.
+        */
+        n_cols_before_alter = n_cols_before_alter_bak;
+
+        if(n_cols_before_alter_bak>0){
+            ut_a(n_cols_before_alter_bak > DATA_N_SYS_COLS);
+            n_cols_before_alter -= DATA_N_SYS_COLS;
+        }
     }
 
 
@@ -1851,7 +1892,9 @@ ulint
 innobase_add_column_default_to_dictionary_for_gcs(
     dict_table_t*           table,
     dict_col_t*             col,
-    trx_t*                  trx
+    trx_t*                  trx,
+    /* flag: true => add column default to SYS_DEF_TB,false => drop default value */
+    ibool                   iflag 
 )
 {
     pars_info_t*	info;
@@ -1869,24 +1912,44 @@ innobase_add_column_default_to_dictionary_for_gcs(
     pars_info_add_binary_literal(info, "def_val", col->def_val->def_val, col->def_val->def_val_len);
     pars_info_add_int4_literal(info, "def_val_len", col->def_val->def_val_len);
 
-    error_no = que_eval_sql(
-        info,
-        "PROCEDURE ADD_SYS_ADDED_COLS_DEFAULT_PROC () IS\n"
-        "BEGIN\n"
-        "INSERT INTO SYS_ADDED_COLS_DEFAULT VALUES(:table_id, :pos, :def_val, :def_val_len);\n"
-        "END;\n",
-        FALSE, trx);
 
-    if (error_no != DB_SUCCESS)
-    {
-        //for safe
-        push_warning_printf(
-            (THD*) trx->mysql_thd,
-            MYSQL_ERROR::WARN_LEVEL_WARN,
-            ER_CANT_CREATE_TABLE,
-            "ADD_SYS_ADDED_COLS_DEFAULT_PROC error %s %d table_name(%s) colid(%d)", __FILE__, __LINE__, table->name, col->ind);
+    if(iflag){ // add col default to system default table
+        error_no = que_eval_sql(
+            info,
+            "PROCEDURE ADD_SYS_ADDED_COLS_DEFAULT_PROC () IS\n"
+            "BEGIN\n"
+            "INSERT INTO SYS_ADDED_COLS_DEFAULT VALUES(:table_id, :pos, :def_val, :def_val_len);\n"
+            "END;\n",
+            FALSE, trx);
+
+        if (error_no != DB_SUCCESS)
+        {
+            //for safe
+            push_warning_printf(
+                (THD*) trx->mysql_thd,
+                MYSQL_ERROR::WARN_LEVEL_WARN,
+                ER_CANT_CREATE_TABLE,
+                "ADD_SYS_ADDED_COLS_DEFAULT_PROC error %s %d table_name(%s) colid(%d)", __FILE__, __LINE__, table->name, col->ind);
+        }
+    }else{
+        error_no = que_eval_sql(
+            info,
+            "PROCEDURE DROP_SYS_ADDED_COLS_DEFAULT_PROC () IS\n"
+            "BEGIN\n"
+            "DELETE FROM SYS_ADDED_COLS_DEFAULT WHERE TABLE_ID=:table_id AND POS=:pos;\n"
+            "END;\n",
+            FALSE, trx);
+
+        if (error_no != DB_SUCCESS)
+        {
+            //for safe
+            push_warning_printf(
+                (THD*) trx->mysql_thd,
+                MYSQL_ERROR::WARN_LEVEL_WARN,
+                ER_CANT_CREATE_TABLE,
+                "DROP_SYS_ADDED_COLS_DEFAULT_PROC error %s %d table_name(%s) colid(%d)", __FILE__, __LINE__, table->name, col->ind);
+        }
     }
-
     return error_no;
     
 }
@@ -1996,7 +2059,8 @@ innobase_add_columns_simple(
                                             col_arr[idx].ind, field->field_name, 
                                             col_arr[idx].mtype, col_arr[idx].prtype, 
                                             col_arr[idx].len, 
-                                            trx);
+                                            trx,
+                                            TRUE);
             if (error_no != DB_SUCCESS )
             {
                 goto err_exit;
@@ -2005,7 +2069,7 @@ innobase_add_columns_simple(
             if (!dict_col_is_nullable(&col_arr[idx]))
             {
                 /* 必含默认值 */
-                error_no = innobase_add_column_default_to_dictionary_for_gcs(table, &col_arr[idx], trx);
+                error_no = innobase_add_column_default_to_dictionary_for_gcs(table, &col_arr[idx], trx, TRUE);
                 if (error_no != DB_SUCCESS )
                 {
                     goto err_exit;
@@ -2041,7 +2105,7 @@ innobase_add_columns_simple(
 
     ut_ad(dict_table_get_n_cols(table) - DATA_N_SYS_COLS + n_add == tmp_table->s->fields);
 
-    error_no = innobase_update_systable_n_cols_for_gcs(table, tmp_table->s->fields, trx);
+    error_no = innobase_update_systable_n_cols_for_gcs(table, tmp_table->s->fields, trx, TRUE,NULL);
     if (error_no != DB_SUCCESS)
         goto err_exit;
 
@@ -2082,6 +2146,204 @@ err_exit:
 
 
 /*
+
+Return
+    true : Error
+    false : success
+*/
+ulint
+innobase_drop_columns_simple(
+    /*===================*/
+    mem_heap_t*         heap,
+    trx_t*			    trx,
+    dict_table_t*       table,
+    TABLE*              alter_table,
+    TABLE*              tmp_table,
+    Alter_inplace_info* inplace_info
+    )
+{
+    //pars_info_t*	info;
+    ulint   		error_no = DB_SUCCESS;
+    Alter_info*     alter_info = static_cast<Alter_info*>(inplace_info->alter_info);
+    Create_field*   cfield;
+    List_iterator<Create_field> def_it(alter_info->create_list);
+    ulint           prev_add_idx = ULINT_UNDEFINED;
+    ulint           idx = 0;
+    ulint           add_idx = 0;
+    Field           *field;
+    dict_col_t      *col_arr = NULL;
+    dict_col_t      col_tmp;
+    ulint           n_add = 0;
+    char*           col_names = NULL;
+    char*           col_name = NULL;
+    ulint           lock_retry = 0;
+    ulint           new_n_field = 0; 
+    ibool           locked = FALSE;
+
+    DBUG_ENTER("innobase_drop_columns_simple");
+
+    DBUG_ASSERT(trx_get_dict_operation(trx) == TRX_DICT_OP_INDEX);
+    ut_ad(trx->dict_operation_lock_mode == RW_X_LATCH);
+    ut_ad(mutex_own(&dict_sys->mutex));
+#ifdef UNIV_SYNC_DEBUG
+    ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_EX));
+#endif /* UNIV_SYNC_DEBUG */
+
+    col_arr = (dict_col_t *)mem_heap_zalloc(heap, sizeof(dict_col_t) * alter_table->s->fields);
+    col_names = (char*)mem_heap_zalloc(heap, alter_table->s->fields * 200);       /* 每个字段长度必小于200 */
+    if (col_arr == NULL || col_names == NULL)
+    {
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "mem_heap_alloc error %s %d", __FILE__, __LINE__);
+
+        goto err_exit;
+    }
+
+    col_name = col_names;
+
+    def_it.rewind();
+    while (!!(cfield =def_it++))
+    {
+        //new added fielded,must be the last cols!!
+        if (!cfield->field)
+        {
+            ut_ad(!cfield->change && !cfield->after);
+
+            if (cfield->change || cfield->after)
+            {
+                push_warning_printf(
+                    (THD*) trx->mysql_thd,
+                    MYSQL_ERROR::WARN_LEVEL_WARN,
+                    ER_CANT_CREATE_TABLE,
+                    "!cfield->change && !cfield->after error %s %d", __FILE__, __LINE__);
+
+                //for safe
+                goto err_exit;
+            }
+
+            add_idx = idx;
+            ut_ad( prev_add_idx == ULINT_UNDEFINED || add_idx == prev_add_idx + 1);
+
+            if (prev_add_idx != ULINT_UNDEFINED && add_idx != prev_add_idx + 1)
+            {
+                //for safe
+                push_warning_printf(
+                    (THD*) trx->mysql_thd,
+                    MYSQL_ERROR::WARN_LEVEL_WARN,
+                    ER_CANT_CREATE_TABLE,
+                    "prev_lock_idx != ULINT_UNDEFINED && lock_idx != prev_lock_idx + 1 %s %d", __FILE__, __LINE__);
+
+                goto err_exit;
+            }
+
+            prev_add_idx = add_idx;
+
+            field = tmp_table->field[idx];
+
+            error_no = innodbase_fill_col_info(trx,&col_tmp, table, tmp_table, idx, heap,cfield,inplace_info);
+
+            if (error_no != DB_SUCCESS)
+                goto err_exit;
+
+            error_no = innobase_add_column_to_dictionary_for_gcs(table, 
+                col_tmp.ind, 
+                field->field_name, 
+                col_tmp.mtype, 
+                col_tmp.prtype, 
+                col_tmp.len,
+                trx,
+                FALSE);
+            if (error_no != DB_SUCCESS )
+            {
+                goto err_exit;
+            }
+
+            if (!dict_col_is_nullable(&col_tmp))
+            {
+                /* 必含默认值 */
+                error_no = innobase_add_column_default_to_dictionary_for_gcs(table, &col_tmp, trx, FALSE);
+                if (error_no != DB_SUCCESS )
+                {
+                    goto err_exit;
+                }
+            }
+
+            n_add++;
+
+           // strcpy(col_name, field->field_name);
+           // col_name += strlen(col_name) + 1;
+        }
+        else
+        {
+            // do a special judge for GEOMETRY TYPE
+            ut_ad(tmp_table->field[idx]->is_equal(cfield) || cfield->sql_type == MYSQL_TYPE_GEOMETRY);
+
+            if (!tmp_table->field[idx]->is_equal(cfield) && !(cfield->sql_type == MYSQL_TYPE_GEOMETRY) )
+            {
+                //for safe
+                goto err_exit;
+            }
+
+            memcpy(&col_arr[idx], dict_table_get_nth_col(table, idx), sizeof(dict_col_t));
+
+            strcpy(col_name, dict_table_get_col_name(table, idx));
+            col_name += strlen(col_name) + 1;
+
+        }
+        idx ++;
+
+        //new added cols didnot stored in col_names
+        ut_a((ulint)(col_name - col_names) < 200 * alter_table->s->fields);
+    }
+
+    //table have added these new cols.
+    ut_ad(dict_table_get_n_cols(table) - DATA_N_SYS_COLS == tmp_table->s->fields);
+    ut_ad(dict_table_get_n_cols(table) - DATA_N_SYS_COLS - n_add == alter_table->s->fields);
+
+    /* set back the value before alter table,here we should get the cols of alter_table*/
+    error_no = innobase_update_systable_n_cols_for_gcs(table,alter_table->s->fields , trx, FALSE,inplace_info->alter_info_bak->n_cols_before_alter_table);
+    if (error_no != DB_SUCCESS)
+        goto err_exit;
+
+    while (lock_retry++ < 10)
+    {
+        if (!rw_lock_x_lock_nowait(&btr_search_latch))
+        {
+            /* Sleep for 10ms before trying again. */
+            os_thread_sleep(10000);
+            continue;
+        }
+
+        locked = TRUE;
+        break;
+    }
+
+    if (!locked)
+    {
+        push_warning_printf(
+            (THD*) trx->mysql_thd,
+            MYSQL_ERROR::WARN_LEVEL_WARN,
+            ER_CANT_CREATE_TABLE,
+            "rw_lock_x_lock_nowait(&btr_search_latch) failed %s %d", __FILE__, __LINE__);
+
+        error_no = DB_ERROR;
+
+        goto err_exit;
+    }
+
+    dict_mem_table_drop_col_simple(table, col_arr, alter_table->s->fields, col_names, col_name - col_names,inplace_info->alter_info_bak->n_cols_before_alter_table);
+
+    rw_lock_x_unlock(&btr_search_latch);
+
+err_exit:
+    DBUG_RETURN(error_no);
+}
+
+
+/*
 fast alter row_format 
 here we support two kinds of fast row-format alter:
 1.gcs->Compact(no fast alter be done before)
@@ -2097,8 +2359,8 @@ innobase_alter_row_format_simple(
 	 /*===================*/
 	mem_heap_t*         heap,
 	trx_t*			    trx,
-	dict_table_t*       table,	
-	TABLE*              tmp_table,
+	dict_table_t*       dict_table,	
+	TABLE*              new_table,
 	Alter_inplace_info* inplace_info,
     enum innodb_row_format_change   change_flag
 )
@@ -2107,7 +2369,7 @@ innobase_alter_row_format_simple(
 	pars_info_t *	info;
 	ulint   		error_no = DB_SUCCESS;
 	ulint			lock_retry = 0;
-	uint			ncols;    
+    
 	//for modify the memory
 	ibool			locked = FALSE;
 
@@ -2115,9 +2377,7 @@ innobase_alter_row_format_simple(
 	DBUG_ENTER("innobase_alter_row_format_simple");
 	DBUG_ASSERT(trx_get_dict_operation(trx) == TRX_DICT_OP_INDEX);
 	ut_ad(trx->dict_operation_lock_mode == RW_X_LATCH);
-	ut_ad(mutex_own(&dict_sys->mutex));
-	ut_ad((tmp_table->s->row_type == ROW_TYPE_COMPACT && dict_table_is_gcs(table))||
-        (tmp_table->s->row_type == ROW_TYPE_GCS && !dict_table_is_gcs(table)));
+	ut_ad(mutex_own(&dict_sys->mutex));	
 
     ut_a(change_flag != INNODB_ROW_FORMAT_CHANGE_NO);
 
@@ -2129,25 +2389,22 @@ innobase_alter_row_format_simple(
 
 	info = pars_info_create();
 
-    ut_ad(tmp_table->s->fields == table->n_cols - DATA_N_SYS_COLS);
+    ut_ad(new_table->s->fields == dict_table->n_cols - DATA_N_SYS_COLS);
 
     //set the row format flag
     if(change_flag == INNODB_ROW_FORMAT_COMACT_TO_GCS){
 	    //compact -> gcs
-        pars_info_add_int4_literal(info,"n_col",tmp_table->s->fields | (1<<31)|(1<<30));
+        pars_info_add_int4_literal(info,"n_col",new_table->s->fields | (1<<31)|(1<<30));
     }else if(change_flag == INNODB_ROW_FORMAT_GCS_TO_COMPACT){
         //gcs -> compact
-        ut_a(!dict_table_is_gcs_after_alter_table(table));
-        pars_info_add_int4_literal(info,"n_col",tmp_table->s->fields | (1<<31));
+        ut_a(!dict_table_is_gcs_after_alter_table(dict_table));
+        pars_info_add_int4_literal(info,"n_col",new_table->s->fields | (1<<31));
     }else{
         //should never come to here!
         ut_a(0);
     }
 
-	pars_info_add_str_literal(info, "table_name", table->name);
-
-	//just for test
-	ncols = dict_table_get_n_cols(table);
+	pars_info_add_str_literal(info, "table_name", dict_table->name);
 
     error_no = que_eval_sql(
         info,
@@ -2163,7 +2420,7 @@ innobase_alter_row_format_simple(
             (THD*) trx->mysql_thd,
             MYSQL_ERROR::WARN_LEVEL_WARN,
             ER_CANT_CREATE_TABLE,
-             "UPDATE_SYS_TABLES_FAST_ALTER_ROWFOMAT error %s %d table_name(%s)", __FILE__, __LINE__, table->name);
+             "UPDATE_SYS_TABLES_FAST_ALTER_ROWFOMAT error %s %d table_name(%s)", __FILE__, __LINE__, dict_table->name);
         error_no = DB_ERROR;
        
         goto err_exit;
@@ -2199,11 +2456,11 @@ innobase_alter_row_format_simple(
     //todo: modify the memory for fast alter row format
 
      if(change_flag == INNODB_ROW_FORMAT_COMACT_TO_GCS){
-         ut_ad(!table->is_gcs);
-         table->is_gcs = TRUE;
+         ut_ad(!dict_table->is_gcs);
+         dict_table->is_gcs = TRUE;
      }else if(change_flag == INNODB_ROW_FORMAT_GCS_TO_COMPACT){
-         ut_ad(table->is_gcs);
-         table->is_gcs = FALSE;
+         ut_ad(dict_table->is_gcs);
+         dict_table->is_gcs = FALSE;
      }else{
          //never come to here!
          ut_a(0);
@@ -2408,7 +2665,7 @@ ha_innobase::check_if_supported_inplace_alter(
     Alter_inplace_info      *inplace_info
 )
 {
-    DBUG_ENTER("check_if_supported_inplace_alter");
+    DBUG_ENTER("ha_innobase::check_if_supported_inplace_alter");
 
 	ut_ad(inplace_info);
 
@@ -2466,7 +2723,7 @@ ha_innobase::is_support_fast_rowformat_change(
  enum row_type		  new_type,
  enum row_type		  old_type){
 
-     DBUG_ENTER("is_support_fast_rowformat_change");
+     DBUG_ENTER("ha_innobase::is_support_fast_rowformat_change");
      if(new_type == ROW_TYPE_GCS && old_type == ROW_TYPE_COMPACT)
          DBUG_RETURN(INNODB_ROW_FORMAT_COMACT_TO_GCS);
 
@@ -2508,7 +2765,7 @@ ha_innobase::inplace_alter_table(
     dict_table_t            *dict_table;
     mem_heap_t*             heap;
 
-    DBUG_ENTER("inplace_alter_table");
+    DBUG_ENTER("ha_innobase::inplace_alter_table");
 
     thd = ha_thd();
 
@@ -2572,10 +2829,21 @@ ha_innobase::inplace_alter_table(
 
     if (ha_alter_info->handler_flags == Alter_inplace_info::ADD_COLUMN_FLAG)  /* 仅加简单列操作 */
     {
+        // save the n_cols_before_alter_table for rollback
+        if(ha_alter_info->alter_info_bak->n_cols_before_alter_table == 0){
+            ha_alter_info->alter_info_bak->n_cols_before_alter_table = dict_table->n_cols_before_alter_table;
+        }else{
+            ut_ad(ha_alter_info->alter_info_bak->n_cols_before_alter_table == dict_table->n_cols_before_alter_table);
+        }
         err = innobase_add_columns_simple(heap, trx, dict_table, tmp_table, ha_alter_info);
     }
 	else if(ha_alter_info->handler_flags == Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG)
 	{
+        if(ha_alter_info->alter_info_bak->row_format_before_alter_table == ROW_TYPE_NOT_USED)
+            ha_alter_info->alter_info_bak->row_format_before_alter_table = get_row_type();
+        else
+            ut_ad(ha_alter_info->alter_info_bak->row_format_before_alter_table == get_row_type());
+
 		//fast alter table row format! 
         err = innobase_alter_row_format_simple(heap,trx,dict_table,tmp_table,ha_alter_info,
                 is_support_fast_rowformat_change(tmp_table->s->row_type,get_row_type()));
@@ -2647,5 +2915,149 @@ error:
     err = convert_error_code_to_mysql(err, 0, NULL);
 
     DBUG_RETURN(err);
+}
+
+
+UNIV_INTERN
+int
+ha_innobase::final_inplace_alter_table(
+   TABLE                *altered_table,
+   TABLE               *tmp_table,
+   Alter_inplace_info  *ha_alter_info,
+   const char*         table_name,
+   bool                commit)
+{
+       trx_t*                  user_trx;
+       THD*			        thd;
+       trx_t*                  trx;
+       ulint                   err = DB_ERROR;
+       char                    norm_name[1000];
+       dict_table_t            *dict_table;
+       mem_heap_t*             heap;
+       DBUG_ENTER("ha_innobase::final_inplace_alter_table");
+
+       thd = ha_thd();
+
+       DBUG_ASSERT(thd == this->user_thd);
+
+       /* final_inplace_alter_table log */
+       ut_print_timestamp(stderr);
+       fprintf(stderr, "  [InnoDB final_inplace_alter_table]  start, query: %s; db_name:%s;tmp_table: %s, table_name: %s, commit:%d \n", 
+           ha_query(), table->s->db.str, tmp_table->alias, table_name,commit);
+
+       /* Get the transaction associated with the current thd, or create one
+       if not yet created */
+
+       //normalize_table_name(norm_name, table->s->normalized_path.str);	
+       normalize_table_name(norm_name, table_name);	
+
+       dict_table = dict_table_get(norm_name, FALSE);
+       if (dict_table == NULL)
+       {
+           push_warning_printf(
+               (THD*) thd,
+               MYSQL_ERROR::WARN_LEVEL_WARN,
+               ER_CANT_CREATE_TABLE,
+               "table %s doesn't exist %s %d", norm_name, __FILE__, __LINE__);
+
+           goto error;
+       }
+
+       heap = mem_heap_create(1024);
+       if (heap == NULL)
+       {
+           push_warning_printf(
+               (THD*) thd,
+               MYSQL_ERROR::WARN_LEVEL_WARN,
+               ER_CANT_CREATE_TABLE,
+               "mem_heap_create error %s %d", __FILE__, __LINE__);
+
+           goto error;
+       }
+
+       user_trx = check_trx_exists(thd);
+
+       /* In case MySQL calls this in the middle of a SELECT query, release
+       possible adaptive hash latch to avoid deadlocks of threads */
+
+       trx_search_latch_release_if_reserved(user_trx);
+
+       trx_start_if_not_started(user_trx);
+
+       /* 创建一个后台事务，用于字典操作. */
+       trx = innobase_trx_allocate(thd);
+       trx_start_if_not_started(trx);
+
+       /* Flag this transaction as a dictionary operation, so that
+       the data dictionary will be locked in crash recovery. */
+       trx_set_dict_operation(trx, TRX_DICT_OP_INDEX);
+
+       /* 全局字段锁 */
+       row_mysql_lock_data_dictionary(trx);
+
+       if(!commit){
+           if (ha_alter_info->handler_flags == Alter_inplace_info::ADD_COLUMN_FLAG)  /* 仅加简单列操作 */
+           {
+               err = innobase_drop_columns_simple(heap, trx, dict_table,altered_table, tmp_table, ha_alter_info);
+           }
+           else if(ha_alter_info->handler_flags == Alter_inplace_info::CHANGE_CREATE_OPTION_FLAG)
+           {
+               //fast alter table row format! 
+               //we just set the 
+               err = innobase_alter_row_format_simple(heap,trx,dict_table,altered_table,ha_alter_info,
+                   is_support_fast_rowformat_change(ha_alter_info->alter_info_bak->row_format_before_alter_table,
+                   get_row_type()));
+
+           }else{
+               ut_ad(FALSE);
+               //to do 
+           }
+
+           /* 成功就提交，否则回滚 */
+           if (err == DB_SUCCESS)
+           {
+               trx_commit_for_mysql(trx);
+
+               /* inplace alter table commit日志 */
+               ut_print_timestamp(stderr);
+               fprintf(stderr, "  [InnoDB final_inplace_alter_table]  commit, query: %s; db_name:%s; table_name: %s \n",
+                   ha_query(), table->s->db.str, table_name);
+           }
+           else
+           {
+               trx_rollback_for_mysql(trx);
+
+               /* inplace alter table rollback日志 */
+               ut_print_timestamp(stderr);
+               fprintf(stderr, "  [InnoDB final_inplace_alter_table]  rollback, error no : "ULINTPF",  query: %s; db_name:%s; table_name: %s \n",
+                   err, ha_query(), table->s->db.str, table_name);
+           }
+
+       }else{
+           // do commit option of innodb dict
+       }
+
+       row_mysql_unlock_data_dictionary(trx);
+
+       trx_free_for_mysql(trx);
+
+       trx_commit_for_mysql(user_trx);
+
+       /* Flush the log to reduce probability that the .frm files and
+       the InnoDB data dictionary get out-of-sync if the user runs
+       with innodb_flush_log_at_trx_commit = 0 */
+
+       log_buffer_flush_to_disk();
+
+       /* Tell the InnoDB server that there might be work for
+       utility threads: */
+
+       srv_active_wake_master_thread();
+
+       mem_heap_free(heap);
+error:
+       err = convert_error_code_to_mysql(err, 0, NULL);
+
+       DBUG_RETURN(err);
 }
 

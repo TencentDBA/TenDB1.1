@@ -289,9 +289,7 @@ dict_mem_table_add_col_default(
     }
 #endif // _DEBUG
 
-    /*
-        这里开不出太大的空间!
-    */
+    
     col->def_val = mem_heap_alloc(heap, sizeof(*col->def_val));
     col->def_val->col = col;
     col->def_val->def_val_len = def_val_len;
@@ -526,7 +524,7 @@ dict_mem_table_add_col_simple(
     dict_col_t*             col_arr,            /*!< in: 增加列后的用户列字典对象 */
     ulint                   n_col,              /*!< in: col_arr的个数 */
     char*                   col_names,          /*!< in: 用户列所有列名 */
-    ulint                   col_names_len       /*!< in: col_names的长度 */
+    ulint                   col_names_len      /*!< in: col_names的长度 */
 )
 {
     ulint                   org_heap_size = 0;
@@ -681,3 +679,176 @@ dict_mem_table_add_col_simple(
     /* 外键 */
 }
 
+
+
+/**********************************************************************//**
+直接对字典对象内存删除采用快速加字段新增的列 
+*/
+void
+dict_mem_table_drop_col_simple(
+    dict_table_t*           table,              /*!< in: 原表字典对象,快速加过字段 */
+    dict_col_t*             col_arr,            /*!< in: 删除新增列后的用户列字典对象 */
+    ulint                   n_col,              /*!< in: 快速加字段前表字段的个数 */
+    char*                   col_names,          /*!< in: 用户列所有列名 */
+    ulint                   col_names_len,      /*!< in: col_names的长度 */
+    uint                    n_cols_before_alter /*!< in: for rollback(包含系统列) */
+)
+{
+    ulint                   org_heap_size = 0;
+    dict_col_t*             org_cols;
+    /* the fast added columns table's cols num */
+    ulint                   org_n_cols = table->n_def - DATA_N_SYS_COLS;
+    ulint                   drop_n_cols = org_n_cols - n_col;
+    dict_index_t*           index = NULL;
+    dict_index_t*           clu_index = NULL;
+    char*                   new_col_names;
+    dict_field_t*           fields;
+    ulint                   i;
+    dict_col_t*             drop_col;
+    
+    ut_ad(dict_table_is_gcs(table) && table->cached);
+    ut_a(n_col < org_n_cols);
+    /* right now the table colums should more than columns altered before */
+    ut_ad(table->n_def > n_col + DATA_N_SYS_COLS && table->n_def  == table->n_cols);
+
+    org_heap_size = mem_heap_get_size(table->heap);
+
+    org_cols = table->cols;
+
+    /* set the n_cols_before_alter_table back to the value before altered */
+    table->n_cols_before_alter_table = n_cols_before_alter;
+   
+    /* 拷贝前N列（用户列）及列名*/
+    table->cols = mem_heap_zalloc(table->heap, sizeof(dict_col_t) * (DATA_N_SYS_COLS + n_col));
+    memcpy(table->cols, col_arr, n_col * sizeof(dict_col_t));
+
+    /* 还原默认值信息，使用table->heap分配内存. 原来表里面可能包含已经快速加字段生成的列,需增加默认值 */
+    for (i = 0; i < n_col; ++i)
+    {
+        if (table->cols[i].def_val)
+        {
+            dict_mem_table_add_col_default(table, &table->cols[i], table->heap,table->cols[i].def_val->def_val, (ulint)table->cols[i].def_val->def_val_len);
+        }
+    }
+
+    /* 还原表的列数量信息 */
+    table->n_def = n_col;
+    table->n_cols = n_col + DATA_N_SYS_COLS;
+
+    new_col_names = mem_heap_zalloc(table->heap, col_names_len);
+    memcpy(new_col_names, col_names, col_names_len);
+    table->col_names = new_col_names;
+
+    /* 增加系统列 */
+    table->cached = FALSE;          /* 避免断言 */
+    dict_table_add_system_columns(table, table->heap);
+    table->cached = TRUE;
+
+    dict_table_set_big_row(table);
+
+    dict_sys->size -= org_heap_size;
+    dict_sys->size += mem_heap_get_size(table->heap);
+
+    /* 更新索引及索引列信息 */
+    index = UT_LIST_GET_FIRST(table->indexes);
+    while (index)
+    {
+        ulint               n_fields;
+        dict_field_t*       org_fields;
+        ibool               is_gen_clust_index = FALSE;
+
+        ut_ad(index->n_def == index->n_fields);
+
+        org_heap_size = mem_heap_get_size(index->heap);
+
+        org_fields = index->fields;
+        fields = org_fields;
+
+        if (dict_index_is_clust(index))
+        {
+            clu_index = index;
+
+            /* 修改主键为rowid的ord_part值 */
+            if (!strcmp(clu_index->name, "GEN_CLUST_INDEX"))
+            {
+                is_gen_clust_index = TRUE;
+            }            
+
+            ut_ad(index->n_fields <= index->n_user_defined_cols + table->n_cols + drop_n_cols);
+
+            /* 聚集索引上已经有快速增加的列信息了,此处不重新分配内存,只处理前n_col列即可 */
+
+            n_fields = index->n_fields;
+
+            /* 聚集索引最后几列不处理,但需要把相关标记为置回去 */
+            for (i = 0; i < drop_n_cols; ++i)
+            {
+                //dict_index_add_col(index, table, dict_table_get_nth_col(table, org_n_cols - drop_n_cols), 0);  /* n_nullable已在dict_index_add_col处理 */
+                drop_col = org_cols + n_col + i;
+
+                if (!(drop_col->prtype & DATA_NOT_NULL)) {
+                    index->n_nullable--;
+                }
+            }
+
+            index->n_fields  -= drop_n_cols;
+            index->n_def     -= drop_n_cols;
+
+            ut_ad(index->n_fields == index->n_def);
+            ut_ad(index->n_fields_before_alter);
+
+            /* 更新index的n_fields_before_alter */
+            index->n_fields_before_alter = index->n_fields - (table->n_cols - drop_n_cols - table->n_cols_before_alter_table);;
+            index->n_nullable_before_alter = dict_index_get_first_n_field_n_nullable(index, index->n_fields_before_alter);
+
+        }
+        else
+        {
+            /* 非聚集索引,此处内存在加字段时重新分配的,并且不可能有人使用,因此此处内存不重新分配 */
+            ut_ad(index->n_user_defined_cols + clu_index->n_uniq + 1 >= index->n_fields);
+            ut_ad(clu_index != NULL);
+            n_fields = index->n_fields;            
+        }
+        
+        /* 修改索引列col和name指针地址 */
+        for (i = 0; i < n_fields; ++i)
+        {
+            ulint       col_ind = org_fields[i].col->ind;
+
+            /* 因为表中n_col后插入了若干列，原列索引大于等于n_col(系统列及需要删除的列)都需要减小增加的列数 */
+            if (col_ind >= n_col)
+            {
+                /* 
+                分两种情况: 
+                1.如果索引字段指向系统列,则减去增加的列数; 
+                2.指向大于原来列数量,且不为系统列,则表示该索引字段被删除,此处直接将该值置为0
+                */
+                if(col_ind >= n_col + drop_n_cols){
+                    col_ind -= drop_n_cols;
+                }else{
+                    col_ind = 0;
+                    /* 此时索引已经处理到新增的列上了,该列之后都是删除的列,不用再执行下面的代码了 */
+                    continue;
+                }
+            }
+           
+            ut_ad( col_ind < n_col + DATA_N_SYS_COLS);
+
+            fields[i].col = dict_table_get_nth_col(table, col_ind);
+            fields[i].name = dict_table_get_col_name(table, col_ind);
+
+            if (is_gen_clust_index && !strcmp(fields[i].name, "DB_ROW_ID"))
+            {
+                ut_ad(!fields[i].col->ord_part);
+                fields[i].col->ord_part = 1;
+            }            
+        }
+
+        dict_sys->size -= org_heap_size;
+        dict_sys->size += mem_heap_get_size(index->heap);
+
+        index = UT_LIST_GET_NEXT(indexes, index);
+    }
+
+    /* 外键 */
+}
