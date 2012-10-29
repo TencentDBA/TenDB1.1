@@ -1754,14 +1754,16 @@ innobase_add_column_to_dictionary_for_gcs(
 
     pars_info_add_ull_literal(info, "table_id", table->id);
     pars_info_add_int4_literal(info, "pos", pos);
-    pars_info_add_str_literal(info, "name", name);
-    pars_info_add_int4_literal(info, "mtype", mtype);
-    pars_info_add_int4_literal(info, "prtype", prtype);
-    pars_info_add_int4_literal(info, "len", len);
 
     /* SYS_COLUMNS(table_id, pos, name, mtype, prtype, len, prec) */
 
     if(iflag){//add column
+
+        pars_info_add_str_literal(info, "name", name);
+        pars_info_add_int4_literal(info, "mtype", mtype);
+        pars_info_add_int4_literal(info, "prtype", prtype);
+        pars_info_add_int4_literal(info, "len", len);
+
         error_no = que_eval_sql(
             info,
             "PROCEDURE ADD_SYS_COLUMNS_PROC () IS\n"
@@ -1788,8 +1790,7 @@ innobase_add_column_to_dictionary_for_gcs(
             info,
             "PROCEDURE DROP_SYS_COLUMNS_PROC () IS\n"
             "BEGIN\n"
-            "DELETE FROM SYS_COLUMNS WHERE TABLE_ID=:table_id AND POS=:pos \n"
-            "AND NAME=:name;\n"
+            "DELETE FROM SYS_COLUMNS WHERE TABLE_ID=:table_id AND POS=:pos; \n"
             "END;\n",
             FALSE, trx);
 
@@ -3035,6 +3036,7 @@ ha_innobase::final_inplace_alter_table(
 
        }else{
            // do commit option of innodb dict
+           ut_a(FALSE);
        }
 
        row_mysql_unlock_data_dictionary(trx);

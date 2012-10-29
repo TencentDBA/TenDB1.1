@@ -624,16 +624,22 @@ dict_mem_table_add_col_simple(
 
             /* 聚集索引只处理前n_field列，因新增的若干列已经在上面处理了 */
             n_fields = index->n_fields;
+
+			/* 记录第一次加字段前的字段信息 */
+            if (index->n_fields_before_alter == 0)
+            {
+                ut_ad(first_alter);
+                //index->n_fields_before_alter = index->n_fields - (table->n_cols - table->n_cols_before_alter_table);
+                index->n_fields_before_alter = index->n_fields;
+                ut_ad( table->n_cols - table->n_cols_before_alter_table == add_n_cols);
+                index->n_nullable_before_alter = dict_index_get_first_n_field_n_nullable(index, index->n_fields_before_alter);
+            }
+
             index->n_fields     += add_n_cols;
 
             ut_ad(index->n_fields == index->n_def);
 
-            if (index->n_fields_before_alter == 0)
-            {
-				ut_ad(first_alter);
-                index->n_fields_before_alter = index->n_fields - (table->n_cols - table->n_cols_before_alter_table);
-                index->n_nullable_before_alter = dict_index_get_first_n_field_n_nullable(index, index->n_fields_before_alter);
-            }
+            
         }
         else
         {
@@ -705,6 +711,7 @@ dict_mem_table_drop_col_simple(
     dict_field_t*           fields;
     ulint                   i;
     dict_col_t*             drop_col;
+    dict_col_t*             col_arr_org = NULL;
     
     ut_ad(dict_table_is_gcs(table) && table->cached);
     ut_a(n_col < org_n_cols);
@@ -719,15 +726,20 @@ dict_mem_table_drop_col_simple(
     table->n_cols_before_alter_table = n_cols_before_alter;
    
     /* 拷贝前N列（用户列）及列名*/
+    col_arr_org = table->cols;
     table->cols = mem_heap_zalloc(table->heap, sizeof(dict_col_t) * (DATA_N_SYS_COLS + n_col));
     memcpy(table->cols, col_arr, n_col * sizeof(dict_col_t));
 
-    /* 还原默认值信息，使用table->heap分配内存. 原来表里面可能包含已经快速加字段生成的列,需增加默认值 */
+    /* 还原默认值信息，直接使用原列上的默认值信息，因默认值就是使用table->heap分配的 */
     for (i = 0; i < n_col; ++i)
     {
         if (table->cols[i].def_val)
         {
-            dict_mem_table_add_col_default(table, &table->cols[i], table->heap,table->cols[i].def_val->def_val, (ulint)table->cols[i].def_val->def_val_len);
+            table->cols[i].def_val = col_arr_org[i].def_val;
+
+            table->cols[i].def_val->col = dict_table_get_nth_col(table, i);
+
+            //dict_mem_table_add_col_default(table, &table->cols[i], table->heap,table->cols[i].def_val->def_val, (ulint)table->cols[i].def_val->def_val_len);
         }
     }
 
@@ -797,10 +809,12 @@ dict_mem_table_drop_col_simple(
             ut_ad(index->n_fields == index->n_def);
             ut_ad(index->n_fields_before_alter);
 
-            /* 更新index的n_fields_before_alter */
-            index->n_fields_before_alter = index->n_fields - (table->n_cols - drop_n_cols - table->n_cols_before_alter_table);;
-            index->n_nullable_before_alter = dict_index_get_first_n_field_n_nullable(index, index->n_fields_before_alter);
-
+            /* 更新index的n_fields_before_alter，只有第一次加字段失败回滚才需要修改该信息 */
+            if (table->n_cols_before_alter_table == 0)
+            {
+                index->n_fields_before_alter = 0;
+                index->n_nullable_before_alter = 0;
+            }
         }
         else
         {

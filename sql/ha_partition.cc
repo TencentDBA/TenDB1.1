@@ -527,7 +527,7 @@ int ha_partition::create_handler_files(const char *path,
                                        int action_flag,
                                        HA_CREATE_INFO *create_info)
 {
-  DBUG_ENTER("ha_partition::create_handler_files()");
+  DBUG_ENTER("ha_partition::create_handler_files");
 
   /*
     We need to update total number of parts since we might write the handler

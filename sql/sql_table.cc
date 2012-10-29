@@ -7235,6 +7235,7 @@ end_inplace_alter:
     if(h_file){
         (void) h_file->ha_create_handler_files(tmp_filename,NULL,CHF_DELETE_FLAG,create_info);
         delete h_file;
+        h_file = NULL;
     }
 #endif
 	if (tmp_table_for_inplace)
@@ -7370,7 +7371,11 @@ end_temporary:
 
 err_new_table_cleanup:
     if(h_file)
+    {
+        (void) h_file->ha_create_handler_files(tmp_filename,NULL,CHF_DELETE_FLAG,create_info);
         delete h_file;
+        h_file = NULL;
+    }
     if (new_table)
     {
         /* close_temporary_table() frees the new_table pointer. */
