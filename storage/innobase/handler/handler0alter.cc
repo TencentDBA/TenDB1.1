@@ -2851,8 +2851,13 @@ ha_innobase::inplace_alter_table(
 		
 	}else{
         ut_ad(FALSE);
-        //to do 暂时断言
+        /* to do 暂时断言  */
     }
+
+	/*
+    ut_print_timestamp(stderr);
+    fprintf(stderr, "  [table %s.%s sys_heap used] "ULINTPF" \n", table->s->db.str, tmp_table->alias, dict_sys->size);
+	*/
     
     /* 成功就提交，否则回滚 */
     if (err == DB_SUCCESS)

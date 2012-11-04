@@ -625,20 +625,18 @@ dict_mem_table_add_col_simple(
             /* 聚集索引只处理前n_field列，因新增的若干列已经在上面处理了 */
             n_fields = index->n_fields;
 
+            index->n_fields     += add_n_cols;
+            ut_ad(index->n_fields == index->n_def);
+
 			/* 记录第一次加字段前的字段信息 */
             if (index->n_fields_before_alter == 0)
             {
                 ut_ad(first_alter);
                 //index->n_fields_before_alter = index->n_fields - (table->n_cols - table->n_cols_before_alter_table);
-                index->n_fields_before_alter = index->n_fields;
-                ut_ad( table->n_cols - table->n_cols_before_alter_table == add_n_cols);
+                index->n_fields_before_alter = index->n_fields - add_n_cols;
+                
                 index->n_nullable_before_alter = dict_index_get_first_n_field_n_nullable(index, index->n_fields_before_alter);
             }
-
-            index->n_fields     += add_n_cols;
-
-            ut_ad(index->n_fields == index->n_def);
-
             
         }
         else
@@ -864,5 +862,6 @@ dict_mem_table_drop_col_simple(
         index = UT_LIST_GET_NEXT(indexes, index);
     }
 
+/*    fprintf(stderr, "  [dict table heap_size] "ULINTPF" \n",mem_heap_get_size(table->heap));*/
     /* 外键 */
 }
