@@ -110,8 +110,8 @@ IF(NOT VERSION)
 
   IF(SHORT_PRODUCT_TAG)
     SET(PRODUCT_TAG "-${SHORT_PRODUCT_TAG}")
-  ELSEIF(MYSQL_SERVER_SUFFIX)
-    SET(PRODUCT_TAG "${MYSQL_SERVER_SUFFIX}")  # Already has a leading dash
+#  ELSEIF(MYSQL_SERVER_SUFFIX)                  #when COMPILE Tmysql,we should specify this option
+#    SET(PRODUCT_TAG "${MYSQL_SERVER_SUFFIX}")  # Already has a leading dash
   ELSE()
     SET(PRODUCT_TAG)
   ENDIF()
