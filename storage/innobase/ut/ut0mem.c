@@ -203,6 +203,16 @@ retry:
 #endif /* !UNIV_HOTBACKUP */
 }
 
+
+/**********************************************************************/
+/* allocate memory and zero-fills n bytes of memory */
+UNIV_INTERN
+void*
+ut_zalloc(ulint n){   
+        return (memset(ut_malloc_low(n,TRUE),0,n));  
+}
+
+
 /**********************************************************************//**
 Frees a memory block allocated with ut_malloc. Freeing a NULL pointer is
 a nop. */

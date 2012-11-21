@@ -658,6 +658,12 @@ mlog_parse_index(
 				= &table->cols[n + DATA_TRX_ID];
 			ind->fields[DATA_ROLL_PTR - 1 + n_uniq].col
 				= &table->cols[n + DATA_ROLL_PTR];
+
+            /* set the col_ind col->ind */
+            ind->fields[DATA_TRX_ID - 1 + n_uniq].col_ind
+                = ind->fields[DATA_TRX_ID - 1 + n_uniq].col->ind;
+            ind->fields[DATA_ROLL_PTR - 1 + n_uniq].col_ind
+                = ind->fields[DATA_ROLL_PTR - 1 + n_uniq].col->ind;
 		}
 
         if (dict_index_is_gcs_clust_after_alter_table(ind))

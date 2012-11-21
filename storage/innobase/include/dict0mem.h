@@ -172,6 +172,8 @@ dict_mem_table_add_col(
 	ulint		mtype,	/*!< in: main datatype */
 	ulint		prtype,	/*!< in: precise type */
 	ulint		len);	/*!< in: precision */
+
+
 /**********************************************************************//**
 This function set col_default for gcs TABLE
 */
@@ -402,6 +404,7 @@ struct dict_field_struct{
 	unsigned	fixed_len:10;	/*!< 0 or the fixed length of the
 					column if smaller than
 					DICT_ANTELOPE_MAX_INDEX_COL_LEN */
+    unsigned	col_ind:10;		/*!< table column position (starting from 0) */
 };
 
 /** Data structure for an index.  Most fields will be
@@ -447,6 +450,7 @@ struct dict_index_struct{
     unsigned    n_nullable_before_alter:10;                     /*!< non-gcs table，always 0; gcs table: before alter table 0, after alter table add column, maybe less than n_nullable */
     unsigned    n_fields_before_alter:10;                       /*!< non-gcs table，always 0; gcs table: before alter table 0, after alter table add column, must less than n_nullable */
 
+    unsigned    n_fields_allocated;        /*!< number of index fields mem that have allocated for fields  */
 #ifndef UNIV_HOTBACKUP
 	UT_LIST_NODE_T(dict_index_t)
 			indexes;/*!< list of indexes of the table */
@@ -581,13 +585,15 @@ struct dict_table_struct{
 	unsigned	n_cols:10;/*!< number of columns */
 	unsigned	corrupted:1;
 				/*!< TRUE if table is corrupted */
-	dict_col_t*	cols;	/*!< array of column descriptions */
-	const char*	col_names;
+	dict_col_t*	cols;	/*!< array of column descriptions */ 
+    unsigned    n_cols_allocated; /*!< mem allocated for cols */
+	char*	col_names;
 				/*!< Column names packed in a character string
 				"name1\0name2\0...nameN\0".  Until
 				the string contains n_cols, it will be
 				allocated from a temporary heap.  The final
 				string will be allocated from table->heap. */
+    unsigned    col_names_length_alloced;
     ibool       is_gcs;         /* whether is gcs table */
     ulint       n_cols_before_alter_table;      /* valid only in gcs table, >0 means has alter table add column */
 #ifndef UNIV_HOTBACKUP
@@ -753,6 +759,48 @@ dict_mem_table_drop_col_simple(
     char*                   col_names,          /*!< in: 用户列所有列名 */
     ulint                   col_names_len,      /*!< in: col_names的长度 */  
     uint                    n_cols_before_alter /*!< in: n_cols before alter,for rollback */
+);
+
+/************************************************************************/
+/* 
+根据表的cols的数量,计算存储dict_table->cols需要的分配内存空间的数量(列数量).
+*/
+
+UNIV_INTERN
+uint 
+dict_mem_table_get_new_col_num(
+    ulint cols          /*<! in: 表数据字典列的数量(包含系统列)*/
+); 
+
+/**************************************************/
+/* 为dict_tabe 分配cols的内存存储空间,如果是第一次加载表,则按照列实际数量分配,否则多分配部分列,用于扩展,避免重复分配产生内存碎片 */
+UNIV_INTERN
+void *
+dict_mem_realloc_dict_cols(
+    dict_table_t *  table,  
+    ulint           col_num    /*<! in: columns number need to allocate memmory(include the 3 system columns) */
+);
+
+/*****************************************************/
+/* 为dict_table 的col_names分配内存空间. 
+第一次分配,按照实际数量分配
+若涉及到col_names的变动,则重新分配内存空间,并且多分配一部分,当下次再更改时,如果空间足够,则重复使用
+否则再分配当前长度加N*DATE_N_COLS_LENGTH_INC的空间
+*/
+UNIV_INTERN
+void *
+dict_mem_realloc_dict_col_names(
+    dict_table_t *  table,  
+    ulint           col_length    /*<! in: col_names length in Byte */
+);
+
+/****************************************************/
+/* allocate memory for index->fields */
+UNIV_INTERN
+void *
+dict_mem_realloc_index_fields(
+    dict_index_t *  index,  
+    ulint           field_num    /*<! in: fields number need to allocate memmory(include the 3 system columns) */
 );
 
 

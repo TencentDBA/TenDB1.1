@@ -2112,6 +2112,7 @@ dict_index_find_cols(
 			if (!strcmp(dict_table_get_col_name(table, j),
 				    field->name)) {
 				field->col = dict_table_get_nth_col(table, j);
+                field->col_ind = field->col->ind;
 
 				goto found;
 			}
@@ -2156,6 +2157,8 @@ dict_index_add_col(
 	field = dict_index_get_nth_field(index, index->n_def - 1);
 
 	field->col = col;
+    /* set the col_ind col->ind */
+    field->col_ind = col->ind;
 	field->fixed_len = (unsigned int) dict_col_get_fixed_size(
 		col, dict_table_is_comp(table));
 

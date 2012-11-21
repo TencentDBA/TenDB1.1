@@ -88,8 +88,9 @@ dict_mem_table_create(
 	table->space = (unsigned int) space;
 	table->n_cols = (unsigned int) (n_cols + DATA_N_SYS_COLS);
 
-	table->cols = mem_heap_alloc(heap, (n_cols + DATA_N_SYS_COLS)
-				     * sizeof(dict_col_t));
+	/*table->cols = mem_heap_alloc(heap, (n_cols + DATA_N_SYS_COLS)
+				     * sizeof(dict_col_t));*/
+    table->cols = dict_mem_realloc_dict_cols(table,(n_cols + DATA_N_SYS_COLS));
 
 #ifndef UNIV_HOTBACKUP
 	table->autoinc_lock = mem_heap_alloc(heap, lock_get_size());
@@ -104,6 +105,10 @@ dict_mem_table_create(
         table->n_cols_before_alter_table = (ulint)(n_cols_before_alter +  DATA_N_SYS_COLS);
     else
         table->n_cols_before_alter_table = 0;
+
+    /* init n_cols_allocated as 0 */
+    table->n_cols_allocated = 0;
+    table->col_names_length_alloced = 0;
 
 	/* The number of transactions that are either waiting on the
 	AUTOINC lock or have been granted the lock. */
@@ -130,6 +135,8 @@ dict_mem_table_free(
 	mutex_free(&(table->autoinc_mutex));
 #endif /* UNIV_HOTBACKUP */
 	ut_free(table->name);
+    ut_free(table->cols);
+    ut_free(table->col_names);
 	mem_heap_free(table->heap);
 }
 
@@ -137,11 +144,10 @@ dict_mem_table_free(
 Append 'name' to 'col_names'.  @see dict_table_t::col_names
 @return	new column names array */
 static
-const char*
+char*
 dict_add_col_name(
 /*==============*/
-	const char*	col_names,	/*!< in: existing column names, or
-					NULL */
+	dict_table_t* table,	/*!< in: dict table, or NULL */
 	ulint		cols,		/*!< in: number of existing columns */
 	const char*	name,		/*!< in: new column name */
 	mem_heap_t*	heap)		/*!< in: heap */
@@ -150,6 +156,7 @@ dict_add_col_name(
 	ulint	new_len;
 	ulint	total_len;
 	char*	res;
+    char*	col_names = table->col_names;
 
 	ut_ad(!cols == !col_names);
 
@@ -167,14 +174,16 @@ dict_add_col_name(
 		old_len = 0;
 	}
 
+
 	new_len = strlen(name) + 1;
 	total_len = old_len + new_len;
 
-	res = mem_heap_alloc(heap, total_len);
+	//res = mem_heap_alloc(heap, total_len);
+    res = dict_mem_realloc_dict_col_names(table,total_len);
 
-	if (old_len > 0) {
-		memcpy(res, col_names, old_len);
-	}
+	//if (old_len > 0) {
+	//	memcpy(res, col_names, old_len);
+	//}
 
 	memcpy(res + old_len, name, new_len);
 
@@ -209,12 +218,12 @@ dict_mem_table_add_col(
 		}
 		if (UNIV_LIKELY(i) && UNIV_UNLIKELY(!table->col_names)) {
 			/* All preceding column names are empty. */
-			char* s = mem_heap_zalloc(heap, table->n_def);
-			table->col_names = s;
+			//char* s = mem_heap_zalloc(heap, table->n_def);
+			//table->col_names = s;
+            table->col_names = dict_mem_realloc_dict_col_names(table,table->n_def);
 		}
 
-		table->col_names = dict_add_col_name(table->col_names,
-						     i, name, heap);
+		table->col_names = dict_add_col_name(table,i, name, heap);
 	}
 
 	col = dict_table_get_nth_col(table, i);
@@ -387,6 +396,8 @@ dict_mem_index_create(
 	heap = mem_heap_create(DICT_HEAP_SIZE);
 	index = mem_heap_zalloc(heap, sizeof(dict_index_t));
 
+    /* new index,set n_fields_allocated ZERO */
+    index->n_fields_allocated = 0;
 	dict_mem_fill_index_struct(index, heap, table_name, index_name,
 				   space, type, n_fields);
 
@@ -511,6 +522,7 @@ dict_mem_index_free(
 	}
 #endif /* UNIV_BLOB_DEBUG */
 
+    ut_free(index->fields);
 	mem_heap_free(index->heap);
 }
 
@@ -533,17 +545,17 @@ dict_mem_table_add_col_simple(
     ulint                   add_n_cols = n_col - org_n_cols;
     dict_index_t*           index = NULL;
     dict_index_t*           clu_index = NULL;
-    char*                   new_col_names;
     dict_field_t*           fields;
     ulint                   i;
-	ibool					first_alter = FALSE;
-    
+	ibool					first_alter = FALSE;   
+    mem_heap_t*             heap_tmp;
+
     ut_ad(dict_table_is_gcs(table) && table->cached);
     ut_ad(table->n_def < n_col + DATA_N_SYS_COLS && table->n_def  == table->n_cols);
 
     org_heap_size = mem_heap_get_size(table->heap);
+    fprintf(stderr, "  [dict_mem_table_add_col_simple begin] "ULINTPF" \n",mem_heap_get_size(table->heap));
 
-    org_cols = table->cols;
 
     if (table->n_cols_before_alter_table == 0)
     {
@@ -552,12 +564,22 @@ dict_mem_table_add_col_simple(
         table->n_cols_before_alter_table = table->n_cols;
     }
 
+
+    /* here we copy the table->cols to org_cols */
+    org_cols = table->cols;    
+
+
     /* 拷贝前N列（用户列）及列名 */
-    table->cols = mem_heap_zalloc(table->heap, sizeof(dict_col_t) * (DATA_N_SYS_COLS + n_col));
+    /*table->cols = mem_heap_zalloc(table->heap, sizeof(dict_col_t) * (DATA_N_SYS_COLS + n_col));*/
+    table->cols = dict_mem_realloc_dict_cols(table,(n_col + DATA_N_SYS_COLS));
     memcpy(table->cols, col_arr, n_col * sizeof(dict_col_t));
 
-    /* 还原默认值信息，使用table->heap分配内存 */
-    for (i = table->n_cols_before_alter_table - DATA_N_SYS_COLS; i < n_col; ++i)
+    
+    /* 
+    还原默认值信息，使用table->heap分配内存
+    org_n_cols之前的列都已经分配默认值空间了,因此只需要分配本次增加的列默认值即可(重复加字段可以省很多内存) 
+    */
+    for (i = org_n_cols; i < n_col; ++i)
     {
         if (table->cols[i].def_val)
         {
@@ -568,19 +590,25 @@ dict_mem_table_add_col_simple(
     table->n_def = n_col;
     table->n_cols = n_col + DATA_N_SYS_COLS;
 
-    new_col_names = mem_heap_zalloc(table->heap, col_names_len);
-    memcpy(new_col_names, col_names, col_names_len);
-    table->col_names = new_col_names;
+    /* heap for store table->col_names */
+    heap_tmp = mem_heap_create(1024);
 
+    
+    table->col_names = dict_mem_realloc_dict_col_names(table,col_names_len);    
+    memcpy(table->col_names, col_names, col_names_len);
+  
     /* 增加系统列 */
     table->cached = FALSE;          /* 避免断言 */
-    dict_table_add_system_columns(table, table->heap);
+    dict_table_add_system_columns(table, heap_tmp);
     table->cached = TRUE;
 
-    dict_table_set_big_row(table);
+    dict_table_set_big_row(table);   
 
     dict_sys->size -= org_heap_size;
     dict_sys->size += mem_heap_get_size(table->heap);
+
+
+    fprintf(stderr, "  [dict_mem_table_add_col_simple end] "ULINTPF" \n",mem_heap_get_size(table->heap));
 
     /* 更新索引及索引列信息 */
     index = UT_LIST_GET_FIRST(table->indexes);
@@ -592,9 +620,7 @@ dict_mem_table_add_col_simple(
 
         ut_ad(index->n_def == index->n_fields);
 
-        org_heap_size = mem_heap_get_size(index->heap);
-
-        org_fields = index->fields;
+        org_heap_size = mem_heap_get_size(index->heap);        
 
         if (dict_index_is_clust(index))
         {
@@ -609,12 +635,15 @@ dict_mem_table_add_col_simple(
 
             ut_ad(index->n_fields <= index->n_user_defined_cols + table->n_cols);
 
-            fields = (dict_field_t*) mem_heap_zalloc(
-                index->heap, 1 + (index->n_user_defined_cols + table->n_cols) * sizeof(dict_field_t));  /* 分配足够多的空间 */
+            //fields = (dict_field_t*) mem_heap_zalloc(
+            //    index->heap, 1 + (index->n_user_defined_cols + table->n_cols) * sizeof(dict_field_t));  /* 分配足够多的空间 */
 
-            memcpy(fields, org_fields, index->n_fields * sizeof(dict_field_t));
+            //memcpy(fields, org_fields, index->n_fields * sizeof(dict_field_t));
+           // index->fields = fields;     /* dict_index_add_col必须保证已经赋值 */
 
-            index->fields = fields;     /* dict_index_add_col必须保证已经赋值 */
+            index->fields = dict_mem_realloc_index_fields(index,index->n_user_defined_cols + table->n_cols);
+            org_fields =  (dict_field_t*) mem_heap_zalloc(heap_tmp, 1 + (index->n_user_defined_cols + table->n_cols) * sizeof(dict_field_t));
+            memcpy(org_fields,index->fields,1 + (index->n_user_defined_cols + table->n_cols) * sizeof(dict_field_t));
 
             /* 聚集索引需要增加最后几列的信息 */
             for (i = 0; i < add_n_cols; ++i)
@@ -644,26 +673,35 @@ dict_mem_table_add_col_simple(
             ut_ad(index->n_user_defined_cols + clu_index->n_uniq + 1 >= index->n_fields);
             ut_ad(clu_index != NULL);
 
-            fields = (dict_field_t*) mem_heap_zalloc(
-                index->heap, 1 + (index->n_user_defined_cols + clu_index->n_uniq + 1) * sizeof(dict_field_t));  /* 分配足够多的空间 */
+           // fields = (dict_field_t*) mem_heap_zalloc(
+            //    index->heap, 1 + (index->n_user_defined_cols + clu_index->n_uniq + 1) * sizeof(dict_field_t));  /* 分配足够多的空间 */
 
-            memcpy(fields, org_fields, index->n_fields * sizeof(dict_field_t));
+           // memcpy(fields, org_fields, index->n_fields * sizeof(dict_field_t));
+            index->fields = dict_mem_realloc_index_fields(index,index->n_user_defined_cols + clu_index->n_uniq + 1);
+
+            org_fields =  (dict_field_t*) mem_heap_zalloc(heap_tmp, 1 + (index->n_user_defined_cols + clu_index->n_uniq + 1) * sizeof(dict_field_t));
+            memcpy(org_fields,index->fields,1 + (index->n_user_defined_cols + clu_index->n_uniq + 1) * sizeof(dict_field_t));
+           
 
             n_fields = index->n_fields;
 
-            index->fields = fields;
+           // index->fields = fields;
         }
+
+        fields = index->fields;
         
         /* 修改索引列col和name指针地址 */
         for (i = 0; i < n_fields; ++i)
         {
-            ulint       col_ind = org_fields[i].col->ind;
+           /* ulint       col_ind = org_fields[i].col->ind; */
+            ulint       col_ind = org_fields[i].col_ind;
 
             /* 因为表中org_n_cols后插入了若干列，原列索引大于等于org_n_cols(系统列)都需要增大增加的列数 */
             if (col_ind >= org_n_cols)
                 col_ind += add_n_cols;
 
             fields[i].col = dict_table_get_nth_col(table, col_ind);
+            fields[i].col_ind = fields[i].col->ind;
             fields[i].name = dict_table_get_col_name(table, col_ind);
 
             if (is_gen_clust_index && !strcmp(fields[i].name, "DB_ROW_ID"))
@@ -680,6 +718,7 @@ dict_mem_table_add_col_simple(
         index = UT_LIST_GET_NEXT(indexes, index);
     }
 
+     mem_heap_free(heap_tmp);
     /* 外键 */
 }
 
@@ -705,12 +744,11 @@ dict_mem_table_drop_col_simple(
     ulint                   drop_n_cols = org_n_cols - n_col;
     dict_index_t*           index = NULL;
     dict_index_t*           clu_index = NULL;
-    char*                   new_col_names;
     dict_field_t*           fields;
     ulint                   i;
     dict_col_t*             drop_col;
     dict_col_t*             col_arr_org = NULL;
-    
+
     ut_ad(dict_table_is_gcs(table) && table->cached);
     ut_a(n_col < org_n_cols);
     /* right now the table colums should more than columns altered before */
@@ -725,7 +763,8 @@ dict_mem_table_drop_col_simple(
    
     /* 拷贝前N列（用户列）及列名*/
     col_arr_org = table->cols;
-    table->cols = mem_heap_zalloc(table->heap, sizeof(dict_col_t) * (DATA_N_SYS_COLS + n_col));
+    /*table->cols = mem_heap_zalloc(table->heap, sizeof(dict_col_t) * (DATA_N_SYS_COLS + n_col));*/
+    table->cols = dict_mem_realloc_dict_cols(table,n_col + DATA_N_SYS_COLS);
     memcpy(table->cols, col_arr, n_col * sizeof(dict_col_t));
 
     /* 还原默认值信息，直接使用原列上的默认值信息，因默认值就是使用table->heap分配的 */
@@ -745,9 +784,8 @@ dict_mem_table_drop_col_simple(
     table->n_def = n_col;
     table->n_cols = n_col + DATA_N_SYS_COLS;
 
-    new_col_names = mem_heap_zalloc(table->heap, col_names_len);
-    memcpy(new_col_names, col_names, col_names_len);
-    table->col_names = new_col_names;
+    table->col_names = dict_mem_realloc_dict_col_names(table,col_names_len);    
+    memcpy(table->col_names, col_names, col_names_len);
 
     /* 增加系统列 */
     table->cached = FALSE;          /* 避免断言 */
@@ -825,7 +863,7 @@ dict_mem_table_drop_col_simple(
         /* 修改索引列col和name指针地址 */
         for (i = 0; i < n_fields; ++i)
         {
-            ulint       col_ind = org_fields[i].col->ind;
+            ulint       col_ind = org_fields[i].col_ind;
 
             /* 因为表中n_col后插入了若干列，原列索引大于等于n_col(系统列及需要删除的列)都需要减小增加的列数 */
             if (col_ind >= n_col)
@@ -847,6 +885,8 @@ dict_mem_table_drop_col_simple(
             ut_ad( col_ind < n_col + DATA_N_SYS_COLS);
 
             fields[i].col = dict_table_get_nth_col(table, col_ind);
+            fields[i].col_ind = fields[i].col->ind;
+
             fields[i].name = dict_table_get_col_name(table, col_ind);
 
             if (is_gen_clust_index && !strcmp(fields[i].name, "DB_ROW_ID"))
@@ -864,4 +904,185 @@ dict_mem_table_drop_col_simple(
 
 /*    fprintf(stderr, "  [dict table heap_size] "ULINTPF" \n",mem_heap_get_size(table->heap));*/
     /* 外键 */
+}
+
+
+
+/************************************************************************/
+/* 
+根据表的cols的数量,计算存储dict_table->cols需要的分配内存空间的数量(列数量).
+
+dict_table->cols的分配策略是: 
+1.新表第一次初始化分配,使用表的默认字段数量做分配.
+2.如果进行快速加字段的表操作,则将新表的内存空间设置为:
+
+小于等于10列的表，初始分配10列的内存；
+对于大于10列的表，分配ceil(CN/10)*10列的内存空间.
+这样不会造成大量不增加字段的表的数据字典的内存浪费.
+*/
+
+UNIV_INTERN
+uint 
+dict_mem_table_get_new_col_num(
+    ulint cols          /*<! in: 表数据字典列的数量(包含系统列)*/
+){
+    if(cols <= DATA_N_INIT_COLS)
+        return DATA_N_INIT_COLS;
+    
+    return (cols +DATA_N_COLS_INC - ((cols - DATA_N_INIT_COLS)%DATA_N_COLS_INC));
+}
+
+
+/*****************************************************/
+/* 
+calc the number of columns need to allocate for dict_table 
+allocate more mem for dict_table->cols to minimize the times to malloc mem
+*/
+UNIV_INLINE
+ulint
+dict_mem_cols_alloc_for_dict_table(
+    ulint  col_num
+    ){
+        if(col_num <= DATA_N_INIT_COLS){
+            return DATA_N_INIT_COLS;
+        }
+        return (col_num + DATA_N_COLS_INC - col_num%DATA_N_COLS_INC + DATA_N_INIT_COLS%DATA_N_COLS_INC);
+}
+
+
+/*********************************************/
+/* for dict table allocate cols mem :
+a.if the space for new cols is enough,return
+b.mem not enogh,re-allocate!
+*/
+UNIV_INTERN
+void *
+dict_mem_realloc_dict_cols(
+    dict_table_t * table,  
+    ulint          col_num    /*<! in: columns number need to allocate memmory(include the 3 system columns) */
+){   
+    void* new_mem_alloc;
+    ulint new_cols;
+
+    if(table->n_cols_allocated == 0){ /* table init,the first time to alloc cols mem */
+        table->n_cols_allocated = col_num;
+        return ut_zalloc(sizeof(dict_col_t) * col_num);
+    }
+
+    new_cols = dict_mem_cols_alloc_for_dict_table(col_num);
+    /* enough memory,return direct */
+    if(table->n_cols_allocated == new_cols){
+        return table->cols;
+    }
+    
+    /* not enough,realloc */
+    new_mem_alloc = ut_zalloc(sizeof(dict_col_t)*new_cols); 
+    memcpy(new_mem_alloc, table->cols, sizeof(dict_col_t)*table->n_cols_allocated);
+    ut_free(table->cols);
+    
+    table->cols = new_mem_alloc;
+    table->n_cols_allocated = new_cols;
+
+    return table->cols;
+}
+
+
+UNIV_INLINE
+ulint
+dict_mem_col_names_alloc_for_dict_table(
+    ulint  col_names_length
+    ){
+        if(col_names_length <= DATA_N_INIT_COL_NAMES_LENGTH){
+            return DATA_N_INIT_COL_NAMES_LENGTH;
+        }
+        return (col_names_length + DATA_N_COL_NAMES_LENGTH_INC - 
+            col_names_length%DATA_N_COL_NAMES_LENGTH_INC + DATA_N_INIT_COL_NAMES_LENGTH%DATA_N_COL_NAMES_LENGTH_INC);
+}
+
+
+/*****************************************************/
+/* 为dict_table 的col_names分配内存空间. 
+第一次分配,按照实际数量分配
+若涉及到col_names的变动,则重新分配内存空间,并且多分配一部分,当下次再更改时,如果空间足够,则重复使用
+否则再分配当前长度加N*DATE_N_COLS_LENGTH_INC的空间
+*/
+UNIV_INTERN
+void *
+dict_mem_realloc_dict_col_names(
+    dict_table_t *  table,  
+    ulint           new_col_length    /*<! in: new col_names length in Byte */
+    ){        
+        ulint length_to_alloc;
+        void* new_mem_alloc;
+
+        if (table->col_names_length_alloced == 0) {
+            char* s = ut_zalloc(new_col_length);
+            table->col_names = s;
+            table->col_names_length_alloced = new_col_length;
+            return table->col_names;
+        }
+
+        length_to_alloc = dict_mem_col_names_alloc_for_dict_table(new_col_length);
+
+        /* enough mem */
+        if(table->col_names_length_alloced >= length_to_alloc)
+        {
+            return table->col_names;
+        }
+
+        /* realloc */
+        new_mem_alloc = ut_zalloc(length_to_alloc); 
+        memcpy(new_mem_alloc, table->col_names, table->col_names_length_alloced);
+        ut_free(table->col_names);
+
+        table->col_names = new_mem_alloc;
+        table->col_names_length_alloced = length_to_alloc;
+
+        return table->col_names;
+}
+
+
+
+UNIV_INLINE
+ulint
+dict_mem_fields_alloc_for_index(
+    ulint  fields_num
+    ){
+        if(fields_num <= DATA_N_INDEX_INIT_FIELDS){
+            return DATA_N_INDEX_INIT_FIELDS;
+        }
+        return (fields_num + DATA_N_INDEX_FIELDS_INC - 
+            fields_num%DATA_N_INDEX_FIELDS_INC + DATA_N_INDEX_FIELDS_INC%DATA_N_INDEX_FIELDS_INC);
+}
+
+
+/****************************************************/
+/* allocate memory for index->fields,if need more fields,re-allocate */
+UNIV_INTERN
+void *
+dict_mem_realloc_index_fields(
+    dict_index_t *  index,  
+    ulint           field_num    /*<! in: index fields number need to allocate memmory(include the 3 system columns) */
+    ){
+        ulint new_field_num;
+        void* new_mem_alloc;
+
+        if(index->n_fields_allocated == 0){
+            index->n_fields_allocated = field_num;
+            return ut_zalloc(1 + field_num * sizeof(dict_field_t));
+        }
+
+        new_field_num = dict_mem_fields_alloc_for_index(field_num);
+        if(index->n_fields_allocated == new_field_num)
+        {
+            return index->fields;
+        }
+
+        new_mem_alloc = (dict_field_t *) ut_zalloc(1 + new_field_num*sizeof(dict_field_t));
+        memcpy(new_mem_alloc, index->fields, 1 + (index->n_fields_allocated*sizeof(dict_field_t)));
+        ut_free(index->fields);
+
+        index->fields = new_mem_alloc;
+        index->n_fields_allocated = new_field_num;
+        return index->fields;
 }

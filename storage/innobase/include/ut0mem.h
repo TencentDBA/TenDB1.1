@@ -91,6 +91,14 @@ ut_malloc_low(
 /**********************************************************************//**
 Allocates memory. */
 #define ut_malloc(n) ut_malloc_low(n, TRUE)
+
+/**********************************************************************/
+/* allocate memory and zero-fills n bytes of memory */
+UNIV_INTERN
+void*
+ut_zalloc(ulint n);
+
+
 /**********************************************************************//**
 Frees a memory block allocated with ut_malloc. Freeing a NULL pointer is
 a nop. */

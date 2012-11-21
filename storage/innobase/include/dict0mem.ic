@@ -49,8 +49,10 @@ dict_mem_fill_index_struct(
 	if (heap) {
 		index->heap = heap;
 		index->name = mem_heap_strdup(heap, index_name);
-		index->fields = (dict_field_t*) mem_heap_alloc(
-			heap, 1 + n_fields * sizeof(dict_field_t));
+/*		index->fields = (dict_field_t*) mem_heap_alloc(
+			heap, 1 + n_fields * sizeof(dict_field_t));*/
+		/* allocate it by ut_zalloc */
+		index->fields = (dict_field_t*) dict_mem_realloc_index_fields(index,n_fields);		
 	} else {
 		index->name = index_name;
 		index->heap = NULL;
