@@ -1965,11 +1965,11 @@ Return
 ulint
 innobase_add_columns_simple(
     /*===================*/
-    mem_heap_t*         heap,
-    trx_t*			    trx,
-    dict_table_t*       table,
-    TABLE*              tmp_table,
-    Alter_inplace_info* inplace_info
+    mem_heap_t*         heap,   /*!< in: temp heap */
+    trx_t*			    trx,    /*!< in: trix  */
+    dict_table_t*       table,  /*!< in/out: origin dict table before fast alter */
+    TABLE*              tmp_table,  /*!< in: new temp table after fast alter table */
+    Alter_inplace_info* inplace_info  /*!< in: inplace alter info */
 )
 {
     //pars_info_t*	info;
@@ -2155,12 +2155,12 @@ Return
 ulint
 innobase_drop_columns_simple(
     /*===================*/
-    mem_heap_t*         heap,
-    trx_t*			    trx,
-    dict_table_t*       table,
-    TABLE*              alter_table,
-    TABLE*              tmp_table,
-    Alter_inplace_info* inplace_info
+    mem_heap_t*         heap, /*!< in: temp heap */
+    trx_t*			    trx,  /*!< in: trx for alter table  */
+    dict_table_t*       table,/*!< in/out: origin dict table before drop column */
+    TABLE*              alter_table,/*!< in: origin table before fast add column  */
+    TABLE*              tmp_table,  /*!< in: tmp table that with added column */
+    Alter_inplace_info* inplace_info /*!< in: inplace alter info with infomation before fast alter */
     )
 {
     //pars_info_t*	info;
@@ -2273,9 +2273,7 @@ innobase_drop_columns_simple(
             }
 
             n_add++;
-
-           // strcpy(col_name, field->field_name);
-           // col_name += strlen(col_name) + 1;
+   
         }
         else
         {

@@ -26,9 +26,9 @@ gcs_part_range_tb_1	CREATE TABLE `gcs_part_range_tb_1` (
  PARTITION p2 VALUES LESS THAN (200) ENGINE = InnoDB,
  PARTITION p3 VALUES LESS THAN (1000) ENGINE = InnoDB,
  PARTITION p4 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */
-show table status like 'gcs_part_range_tb_1';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_part_range_tb_1	InnoDB	10	Gcs	4	16384	65536	0	65536	41943040	1	NULL	NULL	NULL	utf8_general_ci	NULL	row_format=GCS partitioned	
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name='gcs_part_range_tb_1';
+TABLE_SCHEMA	TABLE_NAME	ENGINE	ROW_FORMAT	TABLE_ROWS	CREATE_OPTIONS
+test	gcs_part_range_tb_1	InnoDB	Gcs	4	row_format=GCS partitioned
 create table gcs_part_list_tb_1(c1 int not null primary key auto_increment,
 c2 varchar(128) not null default 'aa',
 c3 char(24),
@@ -57,9 +57,9 @@ gcs_part_list_tb_1	CREATE TABLE `gcs_part_list_tb_1` (
  PARTITION p2 VALUES IN (200) ENGINE = InnoDB,
  PARTITION p3 VALUES IN (1000) ENGINE = InnoDB,
  PARTITION p4 VALUES IN (1,2,3,4,5) ENGINE = InnoDB) */
-show table status like 'gcs_part_list_tb_1';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_part_list_tb_1	InnoDB	10	Gcs	4	16384	65536	0	65536	37748736	1	NULL	NULL	NULL	utf8_general_ci	NULL	row_format=GCS partitioned	
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name='gcs_part_list_tb_1';
+TABLE_SCHEMA	TABLE_NAME	ENGINE	ROW_FORMAT	TABLE_ROWS	CREATE_OPTIONS
+test	gcs_part_list_tb_1	InnoDB	Gcs	4	row_format=GCS partitioned
 create table normal_part_range_tb_2(c1 int not null primary key auto_increment,
 c2 varchar(128) not null default 'aa',
 c3 char(24),
@@ -88,9 +88,9 @@ normal_part_range_tb_2	CREATE TABLE `normal_part_range_tb_2` (
  PARTITION p2 VALUES LESS THAN (200) ENGINE = InnoDB,
  PARTITION p3 VALUES LESS THAN (1000) ENGINE = InnoDB,
  PARTITION p4 VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */
-show table status like 'normal_part_range_tb_2';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-normal_part_range_tb_2	InnoDB	10	Compact	4	16384	65536	0	65536	37748736	1	NULL	NULL	NULL	latin1_swedish_ci	NULL	row_format=COMPACT partitioned	
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name= 'normal_part_range_tb_2';
+TABLE_SCHEMA	TABLE_NAME	ENGINE	ROW_FORMAT	TABLE_ROWS	CREATE_OPTIONS
+test	normal_part_range_tb_2	InnoDB	Compact	4	row_format=COMPACT partitioned
 create table gcs_part_list_tb_2(c1 int not null primary key auto_increment,
 c2 varchar(128) not null default 'aa',
 c3 char(24),
@@ -119,9 +119,9 @@ gcs_part_list_tb_2	CREATE TABLE `gcs_part_list_tb_2` (
  PARTITION p2 VALUES IN (200) ENGINE = InnoDB,
  PARTITION p3 VALUES IN (1000) ENGINE = InnoDB,
  PARTITION p4 VALUES IN (1,2,3,4,5) ENGINE = InnoDB) */
-show table status like 'gcs_part_list_tb_2';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_part_list_tb_2	InnoDB	10	Compact	4	16384	65536	0	65536	37748736	1	NULL	NULL	NULL	utf8_general_ci	NULL	row_format=COMPACT partitioned	
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name= 'gcs_part_list_tb_2';
+TABLE_SCHEMA	TABLE_NAME	ENGINE	ROW_FORMAT	TABLE_ROWS	CREATE_OPTIONS
+test	gcs_part_list_tb_2	InnoDB	Compact	4	row_format=COMPACT partitioned
 create table gcs_part_many_column(
 c_1 int,
 c_2 int,
@@ -254,9 +254,9 @@ c_127 int) row_format=gcs engine=innodb partition by range(c_1)
 partition p2 values less than (200),
 partition p3 values less than (1000),
 partition p4 values less than MAXVALUE);
-show table status like 'gcs_part_many_column';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_part_many_column	InnoDB	10	Gcs	4	16384	65536	0	0	37748736	NULL	NULL	NULL	NULL	latin1_swedish_ci	NULL	row_format=GCS partitioned	
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name= 'gcs_part_many_column';
+TABLE_SCHEMA	TABLE_NAME	ENGINE	ROW_FORMAT	TABLE_ROWS	CREATE_OPTIONS
+test	gcs_part_many_column	InnoDB	Gcs	4	row_format=GCS partitioned
 alter table gcs_part_many_column row_format=compact;
 show create table gcs_part_many_column;
 Table	Create Table
@@ -664,13 +664,13 @@ partition p2 values less than (200),
 partition p3 values less than (1000),
 partition p4 values less than MAXVALUE);
 alter table gcs_part_many_column add column( c_128 int,c_129 int,c_130 int);
-show table status like 'gcs_part_many_column';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-gcs_part_many_column	InnoDB	10	GCS	4	16384	65536	0	0	33554432	NULL	NULL	NULL	NULL	latin1_swedish_ci	NULL	row_format=GCS partitioned	
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name= 'gcs_part_many_column';
+TABLE_SCHEMA	TABLE_NAME	ENGINE	ROW_FORMAT	TABLE_ROWS	CREATE_OPTIONS
+test	gcs_part_many_column	InnoDB	GCS	4	row_format=GCS partitioned
 alter table compact_par_many_column_normal add column( c_128 int,c_129 int,c_130 int);
-show table status like 'compact_par_many_column_normal';
-Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment
-compact_par_many_column_normal	InnoDB	10	Compact	4	16384	65536	0	0	33554432	NULL	NULL	NULL	NULL	latin1_swedish_ci	NULL	row_format=COMPACT partitioned	
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name= 'compact_par_many_column_normal';
+TABLE_SCHEMA	TABLE_NAME	ENGINE	ROW_FORMAT	TABLE_ROWS	CREATE_OPTIONS
+test	compact_par_many_column_normal	InnoDB	Compact	4	row_format=COMPACT partitioned
 select @a:=1;
 @a:=1
 1

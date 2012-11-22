@@ -450,7 +450,7 @@ struct dict_index_struct{
     unsigned    n_nullable_before_alter:10;                     /*!< non-gcs table，always 0; gcs table: before alter table 0, after alter table add column, maybe less than n_nullable */
     unsigned    n_fields_before_alter:10;                       /*!< non-gcs table，always 0; gcs table: before alter table 0, after alter table add column, must less than n_nullable */
 
-    unsigned    n_fields_allocated;        /*!< number of index fields mem that have allocated for fields  */
+    unsigned    n_fields_allocated:10;        /*!< number of index fields mem that have allocated for fields  */
 #ifndef UNIV_HOTBACKUP
 	UT_LIST_NODE_T(dict_index_t)
 			indexes;/*!< list of indexes of the table */
@@ -586,7 +586,8 @@ struct dict_table_struct{
 	unsigned	corrupted:1;
 				/*!< TRUE if table is corrupted */
 	dict_col_t*	cols;	/*!< array of column descriptions */ 
-    unsigned    n_cols_allocated; /*!< mem allocated for cols */
+    unsigned    n_cols_allocated:10; /*!< mem allocated for cols */
+    unsigned    n_cols_before_alter_table:10;      /* valid only in gcs table, >0 means has alter table add column */
 	char*	col_names;
 				/*!< Column names packed in a character string
 				"name1\0name2\0...nameN\0".  Until
@@ -595,7 +596,6 @@ struct dict_table_struct{
 				string will be allocated from table->heap. */
     unsigned    col_names_length_alloced;
     ibool       is_gcs;         /* whether is gcs table */
-    ulint       n_cols_before_alter_table;      /* valid only in gcs table, >0 means has alter table add column */
 #ifndef UNIV_HOTBACKUP
 	hash_node_t	name_hash; /*!< hash chain node */
 	hash_node_t	id_hash; /*!< hash chain node */
@@ -761,16 +761,7 @@ dict_mem_table_drop_col_simple(
     uint                    n_cols_before_alter /*!< in: n_cols before alter,for rollback */
 );
 
-/************************************************************************/
-/* 
-根据表的cols的数量,计算存储dict_table->cols需要的分配内存空间的数量(列数量).
-*/
 
-UNIV_INTERN
-uint 
-dict_mem_table_get_new_col_num(
-    ulint cols          /*<! in: 表数据字典列的数量(包含系统列)*/
-); 
 
 /**************************************************/
 /* 为dict_tabe 分配cols的内存存储空间,如果是第一次加载表,则按照列实际数量分配,否则多分配部分列,用于扩展,避免重复分配产生内存碎片 */

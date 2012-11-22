@@ -762,12 +762,13 @@ dict_table_get(
 
 /**********************************************************************//**
 Adds system columns to a table object. */
+/* IMPORTANT NOTE: here the heap donot need anymore,because the table->col_names no longer allocate from heap!! */
 UNIV_INTERN
 void
 dict_table_add_system_columns(
 /*==========================*/
 	dict_table_t*	table,	/*!< in/out: table */
-	mem_heap_t*	heap)	/*!< in: temporary heap */
+	mem_heap_t*	heap)	/*!< in: temporary heap */   
 {
 	ut_ad(table);
 	ut_ad(table->n_def == table->n_cols - DATA_N_SYS_COLS);

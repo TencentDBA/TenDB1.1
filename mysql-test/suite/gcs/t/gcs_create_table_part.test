@@ -13,7 +13,7 @@ create table gcs_part_range_tb_1(c1 int not null primary key auto_increment,
      partition p3 values less than (1000),
      partition p4 values less than MAXVALUE);
 show create table gcs_part_range_tb_1;
-show table status like 'gcs_part_range_tb_1';
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name='gcs_part_range_tb_1';
 
 #test create list partition
 create table gcs_part_list_tb_1(c1 int not null primary key auto_increment,
@@ -28,7 +28,7 @@ create table gcs_part_list_tb_1(c1 int not null primary key auto_increment,
      partition p3 values in (1000),
      partition p4 values in (1,2,3,4,5));
 show create table gcs_part_list_tb_1;
-show table status like 'gcs_part_list_tb_1';
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name='gcs_part_list_tb_1';
 
 #test mormal table
 create table normal_part_range_tb_2(c1 int not null primary key auto_increment,
@@ -44,7 +44,7 @@ create table normal_part_range_tb_2(c1 int not null primary key auto_increment,
      partition p4 values less than MAXVALUE);
 
 show create table normal_part_range_tb_2;
-show table status like 'normal_part_range_tb_2';
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name= 'normal_part_range_tb_2';
 
 #normal partiton  list
 create table gcs_part_list_tb_2(c1 int not null primary key auto_increment,
@@ -59,7 +59,7 @@ create table gcs_part_list_tb_2(c1 int not null primary key auto_increment,
      partition p3 values in (1000),
      partition p4 values in (1,2,3,4,5));
 show create table gcs_part_list_tb_2;
-show table status like 'gcs_part_list_tb_2';
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name= 'gcs_part_list_tb_2';
 
 #test many column partiton range
 create table gcs_part_many_column(
@@ -195,7 +195,7 @@ c_127 int) row_format=gcs engine=innodb partition by range(c_1)
      partition p3 values less than (1000),
      partition p4 values less than MAXVALUE);     
 
-show table status like 'gcs_part_many_column';
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name= 'gcs_part_many_column';
 
 #change row format
 alter table gcs_part_many_column row_format=compact;
@@ -341,10 +341,10 @@ c_127 int) row_format=compact engine=innodb partition by range(c_1)
 
 #fast add column 
 alter table gcs_part_many_column add column( c_128 int,c_129 int,c_130 int);
-show table status like 'gcs_part_many_column';
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name= 'gcs_part_many_column';
 
 alter table compact_par_many_column_normal add column( c_128 int,c_129 int,c_130 int);
-show table status like 'compact_par_many_column_normal';
+select TABLE_SCHEMA,TABLE_NAME,ENGINE,ROW_FORMAT,TABLE_ROWS,CREATE_OPTIONS from information_schema.tables where table_name= 'compact_par_many_column_normal';
 
 #for many column of gcs
 select @a:=1;
