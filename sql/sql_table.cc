@@ -7130,7 +7130,8 @@ bool mysql_alter_table(THD *thd,char *new_db, char *new_name,
         inplace_info->alter_info_bak = &alter_info_bak;
         
         /* innodb fast alter */
-        if (mysql_inplace_alter_table(thd, table, tmp_table_for_inplace, inplace_info))
+        error = mysql_inplace_alter_table(thd, table, tmp_table_for_inplace, inplace_info);
+        if (error)
         {
             /* ´íÎó´¦Àí£¬²Î¿¼5.6 */			
             goto err_new_table_cleanup;
@@ -7242,6 +7243,7 @@ end_inplace_alter:
 	{
 	  /* auto clear fast alter table's tmp table */
 	  close_temporary_for_inplace(tmp_table_for_inplace, true, true);
+      tmp_table_for_inplace = NULL;
 	}
 
     if (error)
@@ -7376,6 +7378,14 @@ err_new_table_cleanup:
         delete h_file;
         h_file = NULL;
     }
+
+    if (tmp_table_for_inplace)
+    {
+        /* auto clear fast alter table's tmp table */
+        close_temporary_for_inplace(tmp_table_for_inplace, true, true);
+        tmp_table_for_inplace=NULL;
+    }
+
     if (new_table)
     {
         /* close_temporary_table() frees the new_table pointer. */
