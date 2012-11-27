@@ -7403,7 +7403,7 @@ ha_partition::check_if_supported_inplace_alter(
 	){
         DBUG_ENTER("ha_partition::check_if_supported_inplace_alter");	
         handler ** file;
-        bool    is_support;
+        bool    is_support = FALSE;
 
         for(file=m_file; *file;file++){
             is_support = (*file)->check_if_supported_inplace_alter(thd,table,inplace_info);
@@ -7425,8 +7425,7 @@ ha_partition::inplace_alter_table(
 								 TABLE*                 tmp_table,
 								 Alter_inplace_info*	ha_alter_info,
                                  const char*	        table_name)
-{	
-    int save_error =0;
+{	  
     int error;
     char path_name[FN_REFLEN],name_buff[FN_REFLEN];
     char *name_buffer_ptr;

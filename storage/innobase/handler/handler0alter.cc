@@ -2178,7 +2178,6 @@ innobase_drop_columns_simple(
     char*           col_names = NULL;
     char*           col_name = NULL;
     ulint           lock_retry = 0;
-    ulint           new_n_field = 0; 
     ibool           locked = FALSE;
 
     DBUG_ENTER("innobase_drop_columns_simple");

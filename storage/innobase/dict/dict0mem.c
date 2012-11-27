@@ -876,7 +876,7 @@ dict_mem_realloc_dict_cols(
     dict_table_t * table,  
     ulint          col_num    /*<! in: columns number need to allocate memmory(include the 3 system columns) */
 ){   
-    void* new_mem_alloc;
+    dict_col_t* new_mem_alloc;
     ulint n_new_cols;
 
     /* enough memory,return */
@@ -888,7 +888,7 @@ dict_mem_realloc_dict_cols(
     if(table->n_cols_allocated ==0){
         /* table init,the first time to alloc cols mem */
         table->n_cols_allocated = col_num;
-        table->cols = ut_zalloc(sizeof(dict_col_t) * col_num);        
+        table->cols = (dict_col_t*)ut_zalloc(sizeof(dict_col_t) * col_num);        
     }else{
         /* realloc */
         n_new_cols = REALLOC_COUNT(DATA_N_INIT_COLS,DATA_N_COLS_INC,col_num);
@@ -898,7 +898,7 @@ dict_mem_realloc_dict_cols(
 
         n_new_cols = n_new_cols > 1024? 1024:n_new_cols;
       
-        new_mem_alloc = ut_zalloc(sizeof(dict_col_t)*n_new_cols); 
+        new_mem_alloc = (dict_col_t*)ut_zalloc(sizeof(dict_col_t)*n_new_cols); 
 
         memcpy(new_mem_alloc, table->cols, sizeof(dict_col_t)*table->n_cols_allocated);
         ut_free(table->cols);
@@ -925,7 +925,7 @@ dict_mem_realloc_dict_col_names(
 )
 {   
     ulint length_to_alloc;
-    void* new_mem_alloc;
+    char* new_mem_alloc;
 
     if (table->col_names_length_alloced > n_new_cols)
     {
@@ -936,7 +936,7 @@ dict_mem_realloc_dict_col_names(
     if(table->col_names_length_alloced == 0){
 
         table->col_names_length_alloced = n_new_cols;
-        table->col_names = ut_zalloc(n_new_cols);   
+        table->col_names =(char*) ut_zalloc(n_new_cols);   
 
     }else{
 
@@ -944,7 +944,7 @@ dict_mem_realloc_dict_col_names(
 
         ut_a(length_to_alloc >= n_new_cols);
 
-        new_mem_alloc = ut_zalloc(length_to_alloc); 
+        new_mem_alloc = (char*)ut_zalloc(length_to_alloc); 
 
         memcpy(new_mem_alloc, table->col_names, table->col_names_length_alloced);        
         ut_free(table->col_names); 
@@ -966,7 +966,7 @@ dict_mem_realloc_index_fields(
 )
 {
     ulint n_field_to_alloc;
-    void* new_mem_alloc;
+    dict_field_t* new_mem_alloc;
 
     if(index->n_fields_allocated >= field_num)
     {
@@ -975,7 +975,7 @@ dict_mem_realloc_index_fields(
 
     if(index->n_fields_allocated == 0){
         index->n_fields_allocated = field_num;
-        index->fields = ut_zalloc(1 + field_num * sizeof(dict_field_t));
+        index->fields = (dict_field_t*)ut_zalloc(1 + field_num * sizeof(dict_field_t));
     }else{
         n_field_to_alloc = REALLOC_COUNT(DATA_N_INDEX_INIT_FIELDS,DATA_N_INDEX_FIELDS_INC,field_num);
 
