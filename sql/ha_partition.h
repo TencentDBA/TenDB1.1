@@ -272,6 +272,7 @@ public:
 
   const char* get_row_type_str_for_gcs() const;
   bool get_if_row_fast_altered();
+  bool get_if_opened() { return m_handler_status == handler_opened; }
 private:
   int prepare_for_rename();
   int copy_partitions(ulonglong * const copied, ulonglong * const deleted);

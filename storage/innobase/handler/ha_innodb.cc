@@ -7170,6 +7170,29 @@ ha_innobase::create(
 	}
 
 	row_format = form->s->row_type;
+   
+    /* 
+        如果修改表需要创建新的InnoDB子分区,新的子分区的行格式需要继承老分区.
+        如:在创建分区表没有指定ROW_FORMAT,且修改InnoDB的默认行格式时,会出现分区行格式不一致的问题.
+
+        并且要求表必须打开,如alter table par_table engine = innodb. 整个表重建,此时表仍未open,无法获得子表row_format信息.
+        对于这种情况,不需继承老分区行格式.
+    */
+    if( row_format == ROW_TYPE_DEFAULT && form->part_info 
+        && (create_info->other_options &HA_ALTER_PARTITION_TABLE) && form->file->get_if_opened() ){
+
+        row_format = form->file->get_row_type();
+        ut_ad(row_format != ROW_TYPE_NOT_USED);
+
+        if(row_format == ROW_TYPE_NOT_USED)
+        {
+            row_format = form->s->row_type;
+            ut_print_timestamp(stderr);
+            fprintf(stderr, "  [InnoDB create]  invalid partition table row_format, query: %s; db_name:%s; table_name: %s \n", 
+                ha_query(), table->s->db.str, form->alias );
+        }
+
+    }
 
 	if (flags) {
 		/* if ROW_FORMAT is set to default,

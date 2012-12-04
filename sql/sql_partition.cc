@@ -4564,11 +4564,18 @@ uint prep_alter_part_table(THD *thd, TABLE *table, Alter_info *alter_info,
   TABLE *new_table= NULL;
   DBUG_ENTER("prep_alter_part_table");
 
+
   /* Foreign keys on partitioned tables are not supported, waits for WL#148 */
   if (table->part_info && (alter_info->flags & ALTER_FOREIGN_KEY))
   {
     my_error(ER_FOREIGN_KEY_ON_PARTITIONED, MYF(0));
     DBUG_RETURN(TRUE);
+  }
+
+  /* set the HA_ALTER_PARTITION_TABLE to create_info */
+  if(table->part_info)
+  {
+    create_info->other_options |= HA_ALTER_PARTITION_TABLE;
   }
 
   thd->work_part_info= thd->lex->part_info;

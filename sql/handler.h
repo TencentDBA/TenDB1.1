@@ -306,6 +306,7 @@ enum enum_alter_inplace_result {
     /* create flags of create table */
 #define HA_LEX_CREATE_WITH_PARTITION (1L << 3)
 #define HA_CREATE_USE_REAL_GCS_FORMAT (1L << 4)
+#define HA_ALTER_PARTITION_TABLE (1L << 5)
 
 
 
@@ -1756,6 +1757,11 @@ public:
     use the judge if the table's SE level table(s) had been fast altered before.
   */
   virtual bool  get_if_row_fast_altered()  { return false; }
+
+  /* 
+    always return false except partition table.
+  */
+  virtual bool get_if_opened() { return false;}
 
   virtual const char *index_type(uint key_number) { DBUG_ASSERT(0); return "";}
 
