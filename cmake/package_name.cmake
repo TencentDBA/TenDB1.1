@@ -110,8 +110,8 @@ IF(NOT VERSION)
 
   IF(SHORT_PRODUCT_TAG)
     SET(PRODUCT_TAG "-${SHORT_PRODUCT_TAG}")
-#  ELSEIF(MYSQL_SERVER_SUFFIX)                  #when COMPILE Tmysql,we should specify this option
-#    SET(PRODUCT_TAG "${MYSQL_SERVER_SUFFIX}")  # Already has a leading dash
+  ELSEIF(MYSQL_SERVER_SUFFIX)                  #when COMPILE Tmysql,we should specify this option
+    SET(PRODUCT_TAG "${MYSQL_SERVER_SUFFIX}")  # Already has a leading dash
   ELSE()
     SET(PRODUCT_TAG)
   ENDIF()
@@ -120,7 +120,9 @@ IF(NOT VERSION)
     STRING(REGEX REPLACE "^.*-ndb-" "" NDBVERSION "${VERSION}")
     SET(package_name "mysql-cluster${PRODUCT_TAG}-${NDBVERSION}-${SYSTEM_NAME_AND_PROCESSOR}")
   ELSE()
-    SET(package_name "mysql${PRODUCT_TAG}-${VERSION}-${SYSTEM_NAME_AND_PROCESSOR}-gcs")
+    #SET(package_name "mysql${PRODUCT_TAG}-${VERSION}-${SYSTEM_NAME_AND_PROCESSOR}-gcs")
+    #move the PRODUCT_TAG to the end of package_name
+    SET(package_name "mysql-${VERSION}-${SYSTEM_NAME_AND_PROCESSOR}${PRODUCT_TAG}-gcs")
   ENDIF()
 
   MESSAGE("-- Packaging as: ${package_name}")
