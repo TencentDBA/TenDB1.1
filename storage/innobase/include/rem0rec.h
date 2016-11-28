@@ -40,6 +40,8 @@ B-tree page that is the leftmost page on its level
 /* The deleted flag in info bits */
 #define REC_INFO_DELETED_FLAG	0x20UL	/* when bit is set to 1, it means the
 					record has been delete marked */
+#define REC_INFO_GCS_FLAG       0x80UL  /* when bit is set to 1, it means the
+					record is GCS record */
 
 /* Number of extra bytes in an old-style record,
 in addition to the data and the offsets */
@@ -53,6 +55,11 @@ in addition to the data and the offsets */
 #define REC_STATUS_NODE_PTR	1
 #define REC_STATUS_INFIMUM	2
 #define REC_STATUS_SUPREMUM	3
+
+/* REC_FLAG */
+#define REC_FLAG_NONE           0x00
+#define REC_FLAG_GCS            0x01
+#define REC_FLAG_NODE_PTR       0x02
 
 /* The following four constants are needed in page0zip.c in order to
 efficiently compress and decompress pages. */
@@ -78,6 +85,8 @@ The status is stored in the low-order bits. */
 offsets[] array, first passed to rec_get_offsets() */
 #define REC_OFFS_NORMAL_SIZE	100
 #define REC_OFFS_SMALL_SIZE	10
+
+#define rec_gcs_get_feild_count_len(n_feilds) ((n_feilds > 127) ? 2 : 1)
 
 /******************************************************//**
 The following function is used to get the pointer of the next chained record
@@ -136,6 +145,14 @@ ulint
 rec_get_n_fields_old(
 /*=================*/
 	const rec_t*	rec);	/*!< in: physical record */
+/**********************************************************//*
+Determines if the nth field contain EXTERN parts
+*/
+ulint
+rec_get_nth_field_offs_extern_old(
+    /*=======================*/
+    const rec_t*	rec,	/*!< in: record */
+    ulint		n	/*!< in: index of the field */);
 /******************************************************//**
 The following function is used to get the number of fields
 in a record.
@@ -480,6 +497,17 @@ ulint
 rec_offs_any_extern(
 /*================*/
 	const ulint*	offsets);/*!< in: array returned by rec_get_offsets() */
+
+
+/******************************************************//**
+Determine if the offsets are for a record containing
+default value stored columns.
+@return	nonzero if default value stored */
+UNIV_INLINE
+ulint
+rec_offs_any_default(
+/*================*/
+	const ulint*	offsets);/*!< in: array returned by rec_get_offsets() */
 #ifdef UNIV_BLOB_NULL_DEBUG
 /******************************************************//**
 Determine if the offsets are for a record containing null BLOB pointers.
@@ -498,6 +526,15 @@ Returns nonzero if the extern bit is set in nth field of rec.
 UNIV_INLINE
 ulint
 rec_offs_nth_extern(
+/*================*/
+	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
+	ulint		n);	/*!< in: nth field */
+/******************************************************//**
+Returns nonzero if the default bit is set in nth field of rec.
+@return	nonzero if default bit is set */
+UNIV_INLINE
+ulint
+rec_offs_nth_default(
 /*================*/
 	const ulint*	offsets,/*!< in: array returned by rec_get_offsets() */
 	ulint		n);	/*!< in: nth field */
@@ -612,6 +649,47 @@ ulint
 rec_offs_size(
 /*==========*/
 	const ulint*	offsets);/*!< in: array returned by rec_get_offsets() */
+/**********************************************************//**
+Returns field count of gcs record
+@return	size */
+UNIV_INLINE
+ulint
+rec_gcs_get_field_count(
+/*==========*/
+    const rec_t*    rec,                /*!< in: the record ptr */
+    ulint*	        field_count_len);   /*!< out: occupy size of field count */
+/**********************************************************//**
+Set field count of gcs record
+@return	the occupy size of field count */
+UNIV_INLINE
+ulint
+rec_gcs_set_field_count(
+/*==========*/
+    rec_t*          rec,                /*!< in: the record ptr */
+    const ulint     n_fields);          /*!< in: field count of gcs record */
+/*******************************************************************//**
+Get the bit number of nullable bitmap. */
+ulint
+rec_gcs_get_n_nullable(
+/*=======================*/
+	const rec_t*		rec,	/*!< in: gcs_record */
+	const dict_index_t*	index);	/*!< in: clustered index */
+/******************************************************//**
+set gcs flag*/
+UNIV_INLINE
+void
+rec_set_gcs_flag(
+/*=====================*/
+	rec_t*		rec,	/*!< in/out: new-style physical record */
+	ulint		flag);	/*!< in: nonzero if gcs marked */
+/**********************************************************//**
+@return	TRUE when is gcs style */
+UNIV_INLINE
+ibool
+rec_is_gcs(
+/*=====================*/
+	const rec_t*	rec);	/*!< in: new-style physical record */
+
 #ifdef UNIV_DEBUG
 /**********************************************************//**
 Returns a pointer to the start of the record.
@@ -676,13 +754,14 @@ rec_fold(
 					fields to fold */
 	ulint		n_bytes,	/*!< in: number of bytes to fold
 					in an incomplete last field */
-	index_id_t	tree_id)	/*!< in: index tree id */
+	const dict_index_t*       index)	/*!< in: index */
 	__attribute__((pure));
 #endif /* !UNIV_HOTBACKUP */
 /*********************************************************//**
-Builds a ROW_FORMAT=COMPACT record out of a data tuple. */
+Builds a ROW_FORMAT=COMPACT record out of a data tuple. 
+@return TRUE if gcs style */
 UNIV_INTERN
-void
+ibool
 rec_convert_dtuple_to_rec_comp(
 /*===========================*/
 	rec_t*			rec,	/*!< in: origin of record */
@@ -733,6 +812,7 @@ rec_get_converted_size_comp_prefix(
 					it does not */
 	const dfield_t*		fields,	/*!< in: array of data fields */
 	ulint			n_fields,/*!< in: number of data fields */
+    ulint           rec_flag,/*!< in: REC_FLAG_* */
 	ulint*			extra);	/*!< out: extra size */
 /**********************************************************//**
 Determines the size of a data tuple in ROW_FORMAT=COMPACT.
@@ -748,6 +828,7 @@ rec_get_converted_size_comp(
 	ulint			status,	/*!< in: status bits of the record */
 	const dfield_t*		fields,	/*!< in: array of data fields */
 	ulint			n_fields,/*!< in: number of data fields */
+    ibool           gcs_flag,/*!<in: FALSE: can't be gcs record> */
 	ulint*			extra);	/*!< out: extra size */
 /**********************************************************//**
 The following function returns the size of a data tuple when converted to

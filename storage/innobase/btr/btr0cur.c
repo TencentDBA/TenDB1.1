@@ -1255,7 +1255,7 @@ btr_cur_optimistic_insert(
 		if (UNIV_LIKELY(entry->n_fields >= n_uniq)
 		    && UNIV_UNLIKELY(REC_NODE_PTR_SIZE
 				     + rec_get_converted_size_comp_prefix(
-					     index, entry->fields, n_uniq,
+					     index, entry->fields, n_uniq, REC_FLAG_NONE,
 					     NULL)
 				     /* On a compressed page, there is
 				     a two-byte entry in the dense
@@ -1883,7 +1883,7 @@ btr_cur_update_in_place(
 	}
 
 	was_delete_marked = rec_get_deleted_flag(
-		rec, page_is_comp(buf_block_get_frame(block)));
+		rec, page_is_comp(buf_block_get_frame(block)));             /* 更新插入 */
 
 	is_hashed = (block->index != NULL);
 
@@ -2002,6 +2002,7 @@ btr_cur_optimistic_update(
 		rec_print_new(stderr, rec, offsets);
 	}
 #endif /* UNIV_DEBUG */
+    
 
 	if (!row_upd_changes_field_size_or_external(index, offsets, update)) {
 
@@ -2042,7 +2043,7 @@ any_extern:
 	corresponding to new_entry is latched in mtr.
 	Thus the following call is safe. */
 	row_upd_index_replace_new_col_vals_index_pos(new_entry, index, update,
-						     FALSE, heap);
+						     FALSE, heap);                                              /* 得到新的entry */
 	old_rec_size = rec_offs_size(offsets);
 	new_rec_size = rec_get_converted_size(index, new_entry, 0);
 
@@ -2059,7 +2060,7 @@ any_extern:
 	}
 
 	if (UNIV_UNLIKELY(new_rec_size
-			  >= (page_get_free_space_of_empty(page_is_comp(page))
+			  >= (page_get_free_space_of_empty(page_is_comp(page))                      /* 新记录太大。。 */
 			      / 2))) {
 
 		err = DB_OVERFLOW;
@@ -2068,7 +2069,7 @@ any_extern:
 
 	if (UNIV_UNLIKELY(page_get_data_size(page)
 			  - old_rec_size + new_rec_size
-			  < BTR_CUR_PAGE_COMPRESS_LIMIT)) {
+			  < BTR_CUR_PAGE_COMPRESS_LIMIT)) {                                         /* 更新后，页面使用空间太小，可能页面合并 */
 
 		/* The page would become too empty */
 
@@ -2077,11 +2078,11 @@ any_extern:
 	}
 
 	max_size = old_rec_size
-		+ page_get_max_insert_size_after_reorganize(page, 1);
+		+ page_get_max_insert_size_after_reorganize(page, 1);                           /* 计算最大可用空间 */
 
 	if (!(((max_size >= BTR_CUR_PAGE_REORGANIZE_LIMIT)
 	       && (max_size >= new_rec_size))
-	      || (page_get_n_recs(page) <= 1))) {
+	      || (page_get_n_recs(page) <= 1))) {                                           /* 最大可用空间不够 */
 
 		/* There was not enough space, or it did not pay to
 		reorganize: for simplicity, we decide what to do assuming a
@@ -2105,7 +2106,7 @@ any_extern:
 
 	lock_rec_store_on_page_infimum(block, rec);
 
-	btr_search_update_hash_on_delete(cursor);
+	btr_search_update_hash_on_delete(cursor);                                           /* 哈希索引？！ */
 
 	/* The call to row_rec_to_index_entry(ROW_COPY_DATA, ...) above
 	invokes rec_offs_make_valid() to point to the copied record that
@@ -2113,9 +2114,9 @@ any_extern:
 	ut_ad(rec_offs_validate(NULL, index, offsets));
 	rec_offs_make_valid(page_cur_get_rec(page_cursor), index, offsets);
 
-	page_cur_delete_rec(page_cursor, index, offsets, mtr);
+	page_cur_delete_rec(page_cursor, index, offsets, mtr);                              /* 真正删除该记录，并且page_cursor已发生变化，指向原删除记录的下一条记录 */
 
-	page_cur_move_to_prev(page_cursor);
+	page_cur_move_to_prev(page_cursor);                                                 /* 指向上一条记录，插入位置 */
 
 	trx = thr_get_trx(thr);
 
@@ -2127,7 +2128,7 @@ any_extern:
 	}
 
 	/* There are no externally stored columns in new_entry */
-	rec = btr_cur_insert_if_possible(cursor, new_entry, 0/*n_ext*/, mtr);
+	rec = btr_cur_insert_if_possible(cursor, new_entry, 0/*n_ext*/, mtr);               /* 插入记录，可能页面重组 */
 	ut_a(rec); /* <- We calculated above the insert would fit */
 
 	if (page_zip && !dict_index_is_clust(index)
@@ -2140,7 +2141,7 @@ any_extern:
 
 	lock_rec_restore_from_page_infimum(block, rec, block);
 
-	page_cur_move_to_next(page_cursor);
+	page_cur_move_to_next(page_cursor);                                                 /* 移向当前记录 */
 
 	err = DB_SUCCESS;
 err_exit:
@@ -2338,6 +2339,7 @@ btr_cur_pessimistic_update(
 		inherited values. They can be inherited if we have
 		updated the primary key to another value, and then
 		update it back again. */
+        /* 对于不生成undo记录的（事务回滚），没有purge了，删除update的原行外记录 */
 
 		ut_ad(big_rec_vec == NULL);
 
@@ -2364,7 +2366,7 @@ btr_cur_pessimistic_update(
 			goto make_external;
 		}
 	} else if (page_zip_rec_needs_ext(
-			   rec_get_converted_size(index, new_entry, n_ext),
+			   rec_get_converted_size(index, new_entry, n_ext),         /* 不更新的原行外记录不改变，但回滚时，默认值可能导致产生新的行外记录 */
 			   page_is_comp(page), 0, 0)) {
 make_external:
 		big_rec_vec = dtuple_convert_big_rec(index, new_entry, &n_ext);
@@ -2412,7 +2414,7 @@ make_external:
 		offsets = rec_get_offsets(rec, index, offsets,
 					  ULINT_UNDEFINED, heap);
 
-		if (!rec_get_deleted_flag(rec, rec_offs_comp(offsets))) {
+		if (!rec_get_deleted_flag(rec, rec_offs_comp(offsets))) {                   /* 为什么会打了删除标记？见row_ins_clust_index_entry_by_modify等，即插入准备purge记录相同主键的记录 */
 			/* The new inserted record owns its possible externally
 			stored fields */
 			btr_cur_unmark_extern_fields(page_zip,
@@ -3812,7 +3814,7 @@ btr_rec_get_field_ref_offs(
 
 	ut_a(rec_offs_nth_extern(offsets, n));
 	field_ref_offs = rec_get_nth_field_offs(offsets, n, &local_len);
-	ut_a(local_len != UNIV_SQL_NULL);
+	ut_a(local_len != UNIV_SQL_NULL && local_len != UNIV_SQL_DEFAULT);
 	ut_a(local_len >= BTR_EXTERN_FIELD_REF_SIZE);
 
 	return(field_ref_offs + local_len - BTR_EXTERN_FIELD_REF_SIZE);
@@ -4162,7 +4164,7 @@ btr_store_big_rec_extern_fields(
 	ulint		prev_page_no;
 	ulint		hint_page_no;
 	ulint		i;
-	mtr_t		mtr;
+	mtr_t		mtr;                    /* blob页面申请操作使用一个独立的mtr，那就有可能是系统崩溃后而浪费掉 */
 	mtr_t*		alloc_mtr;
 	mem_heap_t*	heap = NULL;
 	page_zip_des_t*	page_zip;
@@ -4238,7 +4240,7 @@ btr_store_big_rec_extern_fields(
 		alloc_mtr = btr_mtr;
 	} else {
 		/* Use the local mtr for allocations. */
-		alloc_mtr = &mtr;
+		alloc_mtr = &mtr;               /* 对于非更新操作，不存在释放页 */
 	}
 
 #if defined UNIV_DEBUG || defined UNIV_BLOB_LIGHT_DEBUG
@@ -4316,7 +4318,7 @@ alloc_another:
 				ut_ad(alloc_mtr == btr_mtr);
 				ut_ad(btr_blob_op_is_update(op));
 				ut_ad(n_freed_pages < btr_mtr->n_freed_pages);
-				freed_pages[n_freed_pages++] = block;
+				freed_pages[n_freed_pages++] = block;               /* 该页面需重新释放 */
 				goto alloc_another;
 			}
 
@@ -4586,7 +4588,7 @@ func_exit:
 		ut_ad(btr_blob_op_is_update(op));
 
 		for (i = 0; i < n_freed_pages; i++) {
-			btr_page_free_low(index, freed_pages[i], 0, alloc_mtr);
+			btr_page_free_low(index, freed_pages[i], 0, alloc_mtr);         /* 释放之前申请的页面 */
 		}
 	}
 

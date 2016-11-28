@@ -199,6 +199,14 @@ dict_col_get_sql_null_size(
 	ulint			comp);	/*!< in: nonzero=ROW_FORMAT=COMPACT  */
 
 /*********************************************************************//**
+Gets the column is nullable.
+@return	TRUE if nullable */
+UNIV_INLINE
+ibool
+dict_col_is_nullable(
+/*============*/
+	const dict_col_t*	col);	/*!< in: column */
+/*********************************************************************//**
 Gets the column number.
 @return	col->ind, table column position (starting from 0) */
 UNIV_INLINE
@@ -273,6 +281,12 @@ dict_table_add_system_columns(
 /*==========================*/
 	dict_table_t*	table,	/*!< in/out: table */
 	mem_heap_t*	heap);	/*!< in: temporary heap */
+
+void
+dict_table_set_big_row(
+    dict_table_t*           table
+);
+
 #ifndef UNIV_HOTBACKUP
 /**********************************************************************//**
 Adds a table object to the dictionary cache. */
@@ -318,6 +332,18 @@ dict_table_change_id_in_cache(
 /*==========================*/
 	dict_table_t*	table,	/*!< in/out: table object already in cache */
 	table_id_t	new_id);/*!< in: new id to set */
+
+/**********************************************************************//*
+Change the gcs flags of a table object in the dictionary cache. This is used in
+DISCARD TABLESPACE. */
+UNIV_INTERN
+void
+dict_table_reset_gcs_alter_flag_in_cache(
+/*==========================*/
+    dict_table_t*	table	/*!< in/out: table object already in cache */,
+    ibool           is_real_gcs     /* whether use real gcs format like after alter table */
+);
+
 /**********************************************************************//**
 Adds a foreign key constraint object to the dictionary cache. May free
 the object if there already is an object with the same identifier in.
@@ -608,6 +634,38 @@ dict_index_is_clust(
 /*================*/
 	const dict_index_t*	index)	/*!< in: index */
 	__attribute__((nonnull, pure, warn_unused_result));
+
+/********************************************************************//**
+Check whether the index is the gcs table's clustered index.
+@return	nonzero for gcs table's clustered index, zero for other indexes */
+UNIV_INLINE
+ulint
+dict_index_is_gcs_clust(
+/*================*/
+	const dict_index_t*	index)	/*!< in: index */
+	__attribute__((nonnull, pure, warn_unused_result));
+
+
+/********************************************************************//**
+@return	 nullable count of index first n fields  */
+UNIV_INLINE
+ulint 
+dict_index_get_first_n_field_n_nullable(
+/*================*/
+    const dict_index_t*     index, 
+    ulint                   first_n_field
+);
+
+/********************************************************************//**
+Check whether the index is the gcs table's clustered index and after alter table.
+@return	nonzero for gcs table's clustered index and after alter table, zero for other indexes */
+UNIV_INLINE
+ulint
+dict_index_is_gcs_clust_after_alter_table(
+/*================*/
+	const dict_index_t*	index)	/*!< in: index */
+	__attribute__((nonnull, pure, warn_unused_result));
+
 /********************************************************************//**
 Check whether the index is unique.
 @return	nonzero for unique index, zero for other indexes */
@@ -715,6 +773,20 @@ Check whether the table uses the compact page format.
 UNIV_INLINE
 ibool
 dict_table_is_comp(
+/*===============*/
+	const dict_table_t*	table);	/*!< in: table */
+/********************************************************************//**
+@return	TRUE if table is gcs table */
+UNIV_INLINE
+ibool
+dict_table_is_gcs(
+/*===============*/
+	const dict_table_t*	table);	/*!< in: table */
+/********************************************************************//**
+@return	TRUE if table is gcs table and the table have been altered */
+UNIV_INLINE
+ibool
+dict_table_is_gcs_after_alter_table(
 /*===============*/
 	const dict_table_t*	table);	/*!< in: table */
 /********************************************************************//**
@@ -879,6 +951,28 @@ dict_index_get_nth_field(
 #else /* UNIV_DEBUG */
 # define dict_index_get_nth_field(index, pos) ((index)->fields + (pos))
 #endif /* UNIV_DEBUG */
+
+/********************************************************************//**
+@return	default value and get length*/
+UNIV_INLINE
+const byte*
+dict_index_get_nth_col_def(
+/*===================*/
+	const dict_index_t*	index,	/*!< in: index */
+	ulint			pos,	/*!< in: position of the field */
+    ulint*          len
+);
+
+UNIV_INLINE
+const byte*
+dict_index_get_nth_col_def_with_heap(
+/*===================*/
+	const dict_index_t*	index,	/*!< in: index */
+	ulint			pos,	/*!< in: position of the field */
+    ulint*          len,
+    mem_heap_t*     heap,
+    ibool           use_heap
+);
 /********************************************************************//**
 Gets pointer to the nth column in an index.
 @return	column */

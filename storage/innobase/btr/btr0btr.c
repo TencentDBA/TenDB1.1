@@ -211,7 +211,7 @@ btr_blob_dbg_add_rec(
 			const byte*	field_ref = rec_get_nth_field(
 				rec, offsets, i, &len);
 
-			ut_a(len != UNIV_SQL_NULL);
+			ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 			ut_a(len >= BTR_EXTERN_FIELD_REF_SIZE);
 			field_ref += len - BTR_EXTERN_FIELD_REF_SIZE;
 
@@ -302,7 +302,7 @@ btr_blob_dbg_remove_rec(
 			const byte*	field_ref = rec_get_nth_field(
 				rec, offsets, i, &len);
 
-			ut_a(len != UNIV_SQL_NULL);
+			ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 			ut_a(len >= BTR_EXTERN_FIELD_REF_SIZE);
 			field_ref += len - BTR_EXTERN_FIELD_REF_SIZE;
 
@@ -523,7 +523,7 @@ btr_blob_dbg_set_deleted_flag(
 			const byte*	field_ref = rec_get_nth_field(
 				rec, offsets, i, &len);
 
-			ut_a(len != UNIV_SQL_NULL);
+			ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 			ut_a(len >= BTR_EXTERN_FIELD_REF_SIZE);
 			field_ref += len - BTR_EXTERN_FIELD_REF_SIZE;
 
@@ -581,7 +581,7 @@ btr_blob_dbg_owner(
 	ut_a(rec_offs_nth_extern(offsets, i));
 
 	field_ref = rec_get_nth_field(rec, offsets, i, &len);
-	ut_a(len != UNIV_SQL_NULL);
+	ut_a(len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT);
 	ut_a(len >= BTR_EXTERN_FIELD_REF_SIZE);
 	field_ref += len - BTR_EXTERN_FIELD_REF_SIZE;
 
@@ -976,6 +976,8 @@ that the caller has made the reservation for free extents!
 @retval NULL if no page could be allocated
 @retval block, rw_lock_x_lock_count(&block->lock) == 1 if allocation succeeded
 (init_mtr == mtr, or the page was not previously freed in mtr)
+为什么呢？由于对于一个更新操作（一个mtr），有可能进行页面回收。如果此时需要申请一页，可能刚被mtr回收的，
+而此时又需要被init_mtr使用，因此需要特殊处理。参考函数btr_store_big_rec_extern_fields
 @retval block (not allocated or initialized) otherwise */
 UNIV_INTERN
 buf_block_t*
@@ -1421,7 +1423,7 @@ btr_create(
 		buf_block_dbg_add_level(block, SYNC_TREE_NODE_NEW);
 
 		if (!fseg_create(space, page_no,
-				 PAGE_HEADER + PAGE_BTR_SEG_LEAF, mtr)) {
+				 PAGE_HEADER + PAGE_BTR_SEG_LEAF, mtr)) {                           /* 根据根页建立叶子节点段 */
 			/* Not enough space for new segment, free root
 			segment before return. */
 			btr_free_root(space, zip_size, page_no, mtr);
@@ -1435,7 +1437,7 @@ btr_create(
 	}
 
 	/* Create a new index page on the allocated segment page */
-	page_zip = buf_block_get_page_zip(block);
+	page_zip = buf_block_get_page_zip(block);                                       /* 初始化根页 */
 
 	if (UNIV_LIKELY_NULL(page_zip)) {
 		page = page_create_zip(block, index, 0, mtr);
@@ -2691,7 +2693,7 @@ insert_empty:
 			the original page.  Copy the page byte for byte
 			and then delete the records from both pages
 			as appropriate.  Deleting will always succeed. */
-			ut_a(new_page_zip);
+			ut_a(new_page_zip);                                                             /* 只有压缩页面才可能失败！ */
 
 			page_zip_copy_recs(new_page_zip, new_page,
 					   page_zip, page, cursor->index, mtr);
@@ -2734,7 +2736,7 @@ insert_empty:
 			the original page.  Copy the page byte for byte
 			and then delete the records from both pages
 			as appropriate.  Deleting will always succeed. */
-			ut_a(new_page_zip);
+			ut_a(new_page_zip);                                                 /* 只有压缩页面才可能失败！ */
 
 			page_zip_copy_recs(new_page_zip, new_page,
 					   page_zip, page, cursor->index, mtr);
@@ -3950,11 +3952,17 @@ btr_index_rec_validate(
 		length.  When fixed_size == 0, prefix_len is the maximum
 		length of the prefix index column. */
 
+        /* 以下用于校验两种非法情况
+           1. 非前缀索引，非NULL字段长度不等于定义长度
+           2. 前缀索引，非NULL字段长度大于前缀索引定义长度
+
+           需要加上对默认值的判断，因为增加默认值可能违反原规定。
+        */
 		if ((dict_index_get_nth_field(index, i)->prefix_len == 0
-		     && len != UNIV_SQL_NULL && fixed_size
+		     && len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT && fixed_size
 		     && len != fixed_size)
 		    || (dict_index_get_nth_field(index, i)->prefix_len > 0
-			&& len != UNIV_SQL_NULL
+			&& len != UNIV_SQL_NULL && len != UNIV_SQL_DEFAULT 
 			&& len
 			> dict_index_get_nth_field(index, i)->prefix_len)) {
 

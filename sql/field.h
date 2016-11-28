@@ -84,6 +84,10 @@ class Field
   Field(const Item &);				/* Prevent use of these */
   void operator=(Field &);
 public:
+  bool field_flags_are_binary()
+  {
+	return (flags & (BINCMP_FLAG | BINARY_FLAG)) != 0;
+  }
   static void *operator new(size_t size) throw ()
   { return sql_alloc(size); }
   static void operator delete(void *ptr_arg, size_t size) { TRASH(ptr_arg, size); }
@@ -553,6 +557,7 @@ private:
   virtual int do_save_field_metadata(uchar *metadata_ptr)
   { return 0; }
 
+
 protected:
   static void handle_int16(uchar *to, const uchar *from,
                            bool low_byte_first_from, bool low_byte_first_to)
@@ -692,10 +697,7 @@ protected:
     return from + sizeof(int64);
   }
 
-  bool field_flags_are_binary()
-  {
-    return (flags & (BINCMP_FLAG | BINARY_FLAG)) != 0;
-  }
+
 
 };
 

@@ -192,7 +192,7 @@ mtr_log_reserve_and_write(
 	}
 
 	if (mlog->heap == NULL) {
-		mtr->end_lsn = log_reserve_and_write_fast(
+		mtr->end_lsn = log_reserve_and_write_fast(   /* 在这里会对log mutex上锁 */
 			first_data, dyn_block_get_used(mlog),
 			&mtr->start_lsn);
 		if (mtr->end_lsn) {
@@ -206,12 +206,12 @@ mtr_log_reserve_and_write(
 	data_size = dyn_array_get_data_size(mlog);
 
 	/* Open the database log for log_write_low */
-	mtr->start_lsn = log_reserve_and_open(data_size);
+	mtr->start_lsn = log_reserve_and_open(data_size); /* 在这里会对log mutex上锁，获得log_sys->lsn */
 
 	if (mtr->log_mode == MTR_LOG_ALL) {
 
 		block = mlog;
-
+        /* 获得日志记录，写到log->buf中，日志项可以跨日志页 */
 		while (block != NULL) {
 			log_write_low(dyn_block_get_data(block),
 				      dyn_block_get_used(block));
@@ -230,7 +230,7 @@ func_exit:
 	/* It is now safe to release the log mutex because the
 	flush_order mutex will ensure that we are the first one
 	to insert into the flush list. */
-	log_release();
+	log_release();                                     /* 这里释放log mutex */
 
 	if (mtr->modifications) {
 		mtr_memo_note_modifications(mtr);

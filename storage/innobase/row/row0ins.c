@@ -2011,11 +2011,11 @@ row_ins_index_entry_low(
 		search_mode = mode | BTR_INSERT;
 	}
 
-	btr_cur_search_to_nth_level(index, 0, entry, PAGE_CUR_LE,
+	btr_cur_search_to_nth_level(index, 0, entry, PAGE_CUR_LE,                       /* 寻找插入位置 */
 				    search_mode,
 				    &cursor, 0, __FILE__, __LINE__, &mtr);
 
-	if (cursor.flag == BTR_CUR_INSERT_TO_IBUF) {
+	if (cursor.flag == BTR_CUR_INSERT_TO_IBUF) {                                    /* 已插入到ibuf中 */
 		/* The insertion was made to the insert buffer already during
 		the search: we are done */
 
@@ -2039,14 +2039,14 @@ row_ins_index_entry_low(
 
 	n_unique = dict_index_get_n_unique(index);
 
-	if (dict_index_is_unique(index) && (cursor.up_match >= n_unique
+	if (dict_index_is_unique(index) && (cursor.up_match >= n_unique                 /* 检查唯一性 */
 					    || cursor.low_match >= n_unique)) {
 
 		if (dict_index_is_clust(index)) {
 			/* Note that the following may return also
 			DB_LOCK_WAIT */
 
-			err = row_ins_duplicate_error_in_clust(
+			err = row_ins_duplicate_error_in_clust(                                 /*  */
 				&cursor, entry, thr, &mtr);
 			if (err != DB_SUCCESS) {
 
@@ -2078,7 +2078,7 @@ row_ins_index_entry_low(
 
 	modify = row_ins_must_modify(&cursor);
 
-	if (modify != 0) {
+	if (modify != 0) {                                                                  /* 插入转化为修改一个现有的记录 */      
 		/* There is already an index entry with a long enough common
 		prefix, we must convert the insert into a modify of an
 		existing record */

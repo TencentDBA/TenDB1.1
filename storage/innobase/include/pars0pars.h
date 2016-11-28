@@ -500,6 +500,18 @@ pars_info_add_str_literal(
 	const char*	str);		/*!< in: string */
 
 /****************************************************************//**
+binary liternal                                                                  
+ */
+UNIV_INTERN
+void
+pars_info_add_binary_literal(
+/*======================*/
+	pars_info_t*	info,		/*!< in: info struct */
+	const char*	    name,		/*!< in: name */
+	const byte*	    val,		/*!< in: val */
+    ulint           val_len);
+
+/****************************************************************//**
 Equivalent to:
 
 char buf[4];
@@ -638,7 +650,7 @@ is also used for some non-functions like the assignment ':=' */
 struct func_node_struct{
 	que_common_t	common;	/*!< type: QUE_NODE_FUNC */
 	int		func;	/*!< token code of the function name */
-	ulint		class;	/*!< class of the function */
+	ulint		fclass;	/*!< class of the function */
 	que_node_t*	args;	/*!< argument(s) of the function */
 	UT_LIST_NODE_T(func_node_t) cond_list;
 				/*!< list of comparison conditions; defined

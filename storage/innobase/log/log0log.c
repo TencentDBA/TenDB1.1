@@ -387,7 +387,7 @@ log_close(void)
 		full by the current mtr: the next mtr log record group
 		will start within this block at the offset data_len */
 
-		log_block_set_first_rec_group(
+		log_block_set_first_rec_group(                              /* first_rec_group是一个mtr完整日志开始的偏移，供下一个mtr使用 */
 			log_block, log_block_get_data_len(log_block));
 	}
 
@@ -2046,7 +2046,7 @@ log_checkpoint(
 
 	if (sync) {
 		/* Wait for the checkpoint write to complete */
-		rw_lock_s_lock(&(log_sys->checkpoint_lock));
+		rw_lock_s_lock(&(log_sys->checkpoint_lock));            /*log_groups_write_checkpoint_info会上一个X锁，但是刷盘是异步的，是否存在重复上锁的可能？*/
 		rw_lock_s_unlock(&(log_sys->checkpoint_lock));
 	}
 
@@ -2205,7 +2205,7 @@ loop:
 	len = (ulint) (end_lsn - start_lsn);
 
 	ut_ad(len != 0);
-
+/*保证一次只在一个文件中读*/
 	if ((source_offset % group->file_size) + len > group->file_size) {
 
 		len = group->file_size - (source_offset % group->file_size);

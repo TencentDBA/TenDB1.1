@@ -606,7 +606,7 @@ dict_sys_tables_get_flags(
 
 	flags = mach_read_from_4(field);
 
-	if (UNIV_LIKELY(flags == DICT_TABLE_ORDINARY)) {
+	if (UNIV_LIKELY(flags == DICT_TABLE_ORDINARY)) {        /* Compact格式就满足flags == DICT_TABLE_ORDINARY，因为其他bit为0 */      
 		return(0);
 	}
 
@@ -793,6 +793,186 @@ loop:
 	}
 
 	goto loop;
+}
+
+char*
+dict_load_added_cols_default_for_gcs_low(
+    dict_table_t*       table,
+    dict_col_t*         col,
+    mem_heap_t*	        heap,
+    rec_t*              rec,
+    dict_index_t*       sys_index
+)
+{
+    const byte* def_val;
+    ulint       def_val_len;
+    ulint		len;
+    ulint		pos;
+    const byte*	field;
+  
+	if (UNIV_UNLIKELY(rec_get_deleted_flag(rec, 0))) {
+		return("delete-marked record in SYS_ADDED_COLS_DEFAULT");
+	}
+
+	if (UNIV_UNLIKELY(rec_get_n_fields_old(rec) != 6)) {
+		return("wrong number of columns in SYS_ADDED_COLS_DEFAULT record");
+	}
+
+	field = rec_get_nth_field_old(rec, 0/*TABLE_ID*/, &len);
+	if (UNIV_UNLIKELY(len != 8)) {
+err_len:
+		return("incorrect column length in SYS_ADDED_COLS_DEFAULT");
+	}
+
+	if (UNIV_UNLIKELY(table->id != mach_read_from_8(field))) {
+		return("SYS_ADDED_COLS_DEFAULT.TABLE_ID mismatch");
+	}
+
+	field = rec_get_nth_field_old(rec, 1/*POS*/, &len);
+	if (UNIV_UNLIKELY(len != 4)) {
+		goto err_len;
+	}
+
+	pos = mach_read_from_4(field);
+
+	if (UNIV_UNLIKELY(col->ind != pos)) {
+		return("SYS_ADDED_COLS_DEFAULT.POS mismatch");
+	}
+
+	rec_get_nth_field_offs_old(rec, 2/*DB_TRX_ID*/, &len);
+	if (UNIV_UNLIKELY(len != DATA_TRX_ID_LEN && len != UNIV_SQL_NULL)) {
+		goto err_len;
+	}
+	rec_get_nth_field_offs_old(rec, 3/*DB_ROLL_PTR*/, &len);
+	if (UNIV_UNLIKELY(len != DATA_ROLL_PTR_LEN && len != UNIV_SQL_NULL)) {
+		goto err_len;
+	}
+
+
+    /** TODO(GCS): 行外字段    **/
+    /** process extral storage **/
+    if(UNIV_UNLIKELY(rec_get_nth_field_offs_extern_old(rec,4/*DEF_VAL*/))) {
+        ulint       offsets_[REC_OFFS_NORMAL_SIZE];
+        ulint *     offsets = offsets_;
+
+        ut_a(rec);
+        ut_ad(!col->def_val);
+        rec_offs_init(offsets_);
+
+        rec_get_offsets(rec,sys_index,offsets,ULINT_UNDEFINED,&heap);
+
+        def_val = btr_rec_copy_externally_stored_field(
+                    rec, offsets,
+                    0,
+                    4/*DEF_VAL*/, &def_val_len, heap);
+        ut_ad(def_val_len);
+        ut_a(def_val);
+    }else{
+	    field = rec_get_nth_field_old(rec, 4/*DEF_VAL*/, &len);
+        if (UNIV_UNLIKELY(len == UNIV_SQL_NULL)) {
+            goto err_len;
+        }
+        def_val         =   field;
+        def_val_len     =   len;
+    }
+
+	field = rec_get_nth_field_old(rec, 5/*DEF_VAL_LEN*/, &len);
+	if (UNIV_UNLIKELY(len != 4)) {
+		goto err_len;
+	}
+
+    if (def_val_len != mach_read_from_4(field)) {
+        goto err_len;
+    }
+
+    dict_mem_table_add_col_default(table, col, table->heap, def_val, def_val_len);
+
+	return(NULL);
+}
+
+void
+dict_load_added_cols_default_for_gcs(
+    dict_table_t*       table,
+    mem_heap_t*	        heap
+)
+{
+    dict_table_t*	sys_added_cols_default;
+    dict_index_t*	sys_index;
+    dict_col_t*     col;
+    btr_pcur_t	    pcur;
+    dtuple_t*	    tuple;
+    dfield_t*	    dfield_tableid;
+    dfield_t*       dfield_pos;
+    rec_t*	        rec;
+    byte*		    buf;
+    ulint		    i;
+    mtr_t		    mtr;
+    char*           err_msg = NULL;
+
+    /* 如果该表不是alter过的GCS表或 该列不是alter后加入的或 系统列，返回 */
+    if (!dict_table_is_gcs_after_alter_table(table))
+        return;
+
+    ut_ad(mutex_own(&(dict_sys->mutex)));
+
+    sys_added_cols_default = dict_table_get_low("SYS_ADDED_COLS_DEFAULT");
+
+    /* 系统表还没创建，也不会包含默认值，返回 */
+    if (!sys_added_cols_default)
+        return ;
+
+    sys_index = UT_LIST_GET_FIRST(sys_added_cols_default->indexes);
+    ut_a(!dict_table_is_comp(sys_added_cols_default));
+
+    ut_a(name_of_col_is(sys_added_cols_default, sys_index, 4, "DEF_VAL"));
+    ut_a(name_of_col_is(sys_added_cols_default, sys_index, 5, "DEF_VAL_LEN"));
+
+    tuple = dtuple_create(heap, 2);
+
+    /* tableid */
+    dfield_tableid = dtuple_get_nth_field(tuple, 0);
+    buf = mem_heap_alloc(heap, 8);
+    mach_write_to_8(buf, table->id);
+
+    dfield_set_data(dfield_tableid, buf, 8);
+
+    /* pos */
+    dfield_pos = dtuple_get_nth_field(tuple, 1);
+    buf = mem_heap_alloc(heap, 4);
+
+    dfield_set_data(dfield_pos, buf, 4);
+    dict_index_copy_types(tuple, sys_index, 2);
+
+    for (i = table->n_cols_before_alter_table - DATA_N_SYS_COLS; i + DATA_N_SYS_COLS < (ulint) table->n_cols; i++) 
+    {
+        col = dict_table_get_nth_col(table, i);
+
+        /* NOT NULL才有默认值，并且一定有 */
+        if (dict_col_is_nullable(col))
+            continue;
+
+        /* 设置pos */
+        mach_write_to_4(dfield_pos->data, col->ind);
+ 
+        mtr_start(&mtr);
+
+        btr_pcur_open_on_user_rec(sys_index, tuple, PAGE_CUR_GE,
+            BTR_SEARCH_LEAF, &pcur, &mtr);
+
+        rec = btr_pcur_get_rec(&pcur);
+        ut_a(btr_pcur_is_on_user_rec(&pcur));
+
+        err_msg = dict_load_added_cols_default_for_gcs_low(table, col, heap, rec, sys_index);
+        if (err_msg) {
+            fprintf(stderr, "InnoDB: %s\n", err_msg);
+            ut_error;
+        }
+
+        btr_pcur_close(&pcur);
+        mtr_commit(&mtr);
+    } 
+
+    return ;
 }
 
 /********************************************************************//**
@@ -994,6 +1174,9 @@ dict_load_columns(
 
 	btr_pcur_close(&pcur);
 	mtr_commit(&mtr);
+
+    /* 对gcs表装载默认值 */
+    dict_load_added_cols_default_for_gcs(table, heap);
 }
 
 /** Error message for a delete-marked record in dict_load_field_low() */
@@ -1095,7 +1278,7 @@ err_len:
 		return("SYS_FIELDS.POS mismatch");
 	}
 
-	if (first_field || pos_and_prefix_len > 0xFFFFUL) {
+	if (first_field || pos_and_prefix_len > 0xFFFFUL) {             /* 对于第0列来说，position可能是0，所以对first_field做特殊处理 */
 		prefix_len = pos_and_prefix_len & 0xFFFFUL;
 		position = (pos_and_prefix_len & 0xFFFF0000UL)  >> 16;
 	} else {
@@ -1592,6 +1775,8 @@ dict_load_table_low(
 	ulint		space;
 	ulint		n_cols;
 	ulint		flags;
+    ibool       is_gcs = FALSE;
+    ulint       n_cols_before_alter_table = 0;
 
 	if (UNIV_UNLIKELY(rec_get_deleted_flag(rec, 0))) {
 		return("delete-marked record in SYS_TABLES");
@@ -1682,7 +1867,13 @@ err_len:
 	if (n_cols & 0x80000000UL) {
 		ulint	flags2;
 
-		flags |= DICT_TF_COMPACT;
+        if (n_cols & 0x40000000UL)      /* 次高位表示GCS */
+        {
+            ut_ad(flags == 0);          /* 参考dict_sys_tables_get_flags */
+            is_gcs = TRUE;
+        }
+
+        flags |= DICT_TF_COMPACT;       
 
 		field = rec_get_nth_field_old(rec, 7, &len);
 
@@ -1692,6 +1883,11 @@ err_len:
 		}
 
 		flags2 = mach_read_from_4(field);
+
+        /* 对GCS表，mix_len的高两字节是保存alter table add column前的字段数 */
+        n_cols_before_alter_table = (flags2 & 0xFFFF0000) >> 16;
+        ut_ad(n_cols_before_alter_table == 0 || is_gcs);
+        flags2 &= flags2 & 0x0000FFFF;
 
 		if (flags2 & (~0 << (DICT_TF2_BITS - DICT_TF2_SHIFT))) {
 			ut_print_timestamp(stderr);
@@ -1708,9 +1904,11 @@ err_len:
 		flags |= flags2 << DICT_TF2_SHIFT;
 	}
 
+    ut_ad(is_gcs || !(n_cols & 0x40000000UL));            /* 确保次高位没用的断言 */
+
 	/* See if the tablespace is available. */
-	*table = dict_mem_table_create(name, space, n_cols & ~0x80000000UL,
-				       flags);
+	*table = dict_mem_table_create(name, space, n_cols & ~0xC0000000UL,         /*修改掩码*/
+				       flags, is_gcs, n_cols_before_alter_table);
 
 	field = rec_get_nth_field_old(rec, 3/*ID*/, &len);
 	ut_ad(len == 8); /* this was checked earlier */

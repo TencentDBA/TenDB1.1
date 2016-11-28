@@ -212,6 +212,17 @@ dict_load_foreigns(
 					load of tables chained by FK */
 	ibool		check_charsets);/*!< in: TRUE=check charsets
 					compatibility */
+
+
+/***********************************************************************//**
+Loads gcs table all default info from sys_added_cols_default                                                                         
+*/
+UNIV_INTERN
+void
+dict_load_added_cols_default_for_gcs(
+    dict_table_t*       table,
+    mem_heap_t*	        heap
+);
 /********************************************************************//**
 Prints to the standard output information on all tables found in the data
 dictionary system table. */

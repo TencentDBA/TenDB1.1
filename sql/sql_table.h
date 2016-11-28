@@ -144,9 +144,10 @@ bool mysql_create_table_no_lock(THD *thd, const char *db,
                                 Alter_info *alter_info,
                                 bool tmp_table, uint select_field_count,
                                 bool *is_trans);
-bool mysql_prepare_alter_table(THD *thd, TABLE *table,
-                               HA_CREATE_INFO *create_info,
-                               Alter_info *alter_info);
+bool mysql_prepare_alter_table(THD *thd, TABLE  *table,
+                               HA_CREATE_INFO   *create_info,
+                               Alter_info       *alter_info,
+                               void             **inplace_info_out);
 bool mysql_trans_prepare_alter_copy_data(THD *thd);
 bool mysql_trans_commit_alter_copy_data(THD *thd);
 bool mysql_alter_table(THD *thd, char *new_db, char *new_name,
@@ -155,6 +156,7 @@ bool mysql_alter_table(THD *thd, char *new_db, char *new_name,
                        Alter_info *alter_info,
                        uint order_num, ORDER *order, bool ignore);
 bool mysql_compare_tables(TABLE *table,
+                          void  *inplace_info,
                           Alter_info *alter_info,
                           HA_CREATE_INFO *create_info,
                           uint order_num,
@@ -213,6 +215,8 @@ bool check_duplicate_warning(THD *thd, char *msg, ulong length);
 */
 uint explain_filename(THD* thd, const char *from, char *to, uint to_length,
                       enum_explain_filename_mode explain_mode);
+
+
 
 
 extern MYSQL_PLUGIN_IMPORT const char *primary_key_name;

@@ -293,6 +293,10 @@ row_build(
 			const byte*	field = rec_get_nth_field(
 				rec, offsets, i, &len);
 
+            /* 处理默认值情况 */
+            if (len == UNIV_SQL_DEFAULT)
+                field = dict_index_get_nth_col_def_with_heap(index, i, &len, heap, type != ROW_COPY_POINTERS);
+
 			dfield_set_data(dfield, field, len);
 		}
 
@@ -323,7 +327,7 @@ row_build(
 		column. No cache is needed. */
 		ut_ad(dict_table_get_format(index->table)
 		      < DICT_TF_FORMAT_ZIP);
-	} else if (j) {
+	} else if (j) {                                                                 /* 对于dynamic和compressed，获得最大索引前缀的内容 */
 		*ext = row_ext_create(j, ext_cols, index->table->flags, row,
 				      heap);
 	} else {
@@ -350,8 +354,9 @@ row_rec_to_index_entry_low(
 	const ulint*		offsets,/*!< in: rec_get_offsets(rec, index) */
 	ulint*			n_ext,	/*!< out: number of externally
 					stored columns */
-	mem_heap_t*		heap)	/*!< in: memory heap from which
+	mem_heap_t*		heap,	/*!< in: memory heap from which
 					the memory needed is allocated */
+    ibool           copy_data)
 {
 	dtuple_t*	entry;
 	dfield_t*	dfield;
@@ -381,6 +386,10 @@ row_rec_to_index_entry_low(
 
 		dfield = dtuple_get_nth_field(entry, i);
 		field = rec_get_nth_field(rec, offsets, i, &len);
+
+        /* 处理默认值情况 */
+        if (len == UNIV_SQL_DEFAULT) 
+            field = dict_index_get_nth_col_def_with_heap(index, i, &len, heap, copy_data);
 
 		dfield_set_data(dfield, field, len);
 
@@ -443,7 +452,7 @@ row_rec_to_index_entry(
 #endif /* UNIV_BLOB_NULL_DEBUG */
 	}
 
-	entry = row_rec_to_index_entry_low(rec, index, offsets, n_ext, heap);
+	entry = row_rec_to_index_entry_low(rec, index, offsets, n_ext, heap, type == ROW_COPY_DATA);
 
 	dtuple_set_info_bits(entry,
 			     rec_get_info_bits(rec, rec_offs_comp(offsets)));
@@ -526,6 +535,8 @@ row_build_row_ref(
 		ut_a(pos != ULINT_UNDEFINED);
 
 		field = rec_get_nth_field(rec, offsets, pos, &len);
+        /* 聚集索引主键列不可能含默认值 */
+        ut_ad(len != UNIV_SQL_DEFAULT);
 
 		dfield_set_data(dfield, field, len);
 
@@ -640,6 +651,8 @@ notfound:
 		ut_a(pos != ULINT_UNDEFINED);
 
 		field = rec_get_nth_field(rec, offsets, pos, &len);
+        /* 聚集索引主键列不可能含默认值 */
+        ut_ad(len != UNIV_SQL_DEFAULT);
 
 		dfield_set_data(dfield, field, len);
 
@@ -952,6 +965,8 @@ row_raw_format(
 
 		return(0);
 	}
+
+    ut_ad(data_len != UNIV_SQL_DEFAULT);
 
 	if (data_len == UNIV_SQL_NULL) {
 

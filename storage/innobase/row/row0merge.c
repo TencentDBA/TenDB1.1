@@ -371,7 +371,7 @@ row_merge_buf_add(
 
 		size = rec_get_converted_size_comp(index,
 						   REC_STATUS_ORDINARY,
-						   entry, n_fields, &extra);
+						   entry, n_fields, FALSE, &extra);
 
 		ut_ad(data_size + extra_size + REC_N_NEW_EXTRA_BYTES == size);
 		ut_ad(extra_size + REC_N_NEW_EXTRA_BYTES == extra);
@@ -580,7 +580,7 @@ row_merge_buf_write(
 
 		size = rec_get_converted_size_comp(index,
 						   REC_STATUS_ORDINARY,
-						   entry, n_fields,
+						   entry, n_fields,FALSE,
 						   &extra_size);
 		ut_ad(size >= extra_size);
 		ut_ad(extra_size >= REC_N_NEW_EXTRA_BYTES);
@@ -1894,7 +1894,7 @@ row_merge_insert_index_tuples(
 			}
 
 			dtuple = row_rec_to_index_entry_low(
-				mrec, index, offsets, &n_ext, tuple_heap);
+				mrec, index, offsets, &n_ext, tuple_heap, FALSE);
 
 			if (UNIV_UNLIKELY(n_ext)) {
 				row_merge_copy_blobs(mrec, offsets, zip_size,
@@ -2327,13 +2327,18 @@ row_merge_create_temporary_table(
 	ulint		n_cols = dict_table_get_n_user_cols(table);
 	ulint		error;
 	mem_heap_t*	heap = mem_heap_create(1000);
+    ulint       n_cols_before_alter = 0;
 
 	ut_ad(table_name);
 	ut_ad(index_def);
 	ut_ad(table);
 	ut_ad(mutex_own(&dict_sys->mutex));
 
-	new_table = dict_mem_table_create(table_name, 0, n_cols, table->flags);
+    /* 重建主键相当于重建表;重建gcs表，n_cols_before_alter视乎参数innodb_create_use_gcs_real_format */
+    if (srv_create_use_gcs_real_format && table->is_gcs)
+        n_cols_before_alter = n_cols;
+
+	new_table = dict_mem_table_create(table_name, 0, n_cols, table->flags, table->is_gcs, n_cols_before_alter);
 
 	for (i = 0; i < n_cols; i++) {
 		const dict_col_t*	col;

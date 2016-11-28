@@ -142,8 +142,10 @@ row_rec_to_index_entry_low(
 	const ulint*		offsets,/*!< in: rec_get_offsets(rec, index) */
 	ulint*			n_ext,	/*!< out: number of externally
 					stored columns */
-	mem_heap_t*		heap);	/*!< in: memory heap from which
+	mem_heap_t*		heap,	/*!< in: memory heap from which
 					the memory needed is allocated */
+    ibool           copy_data); /*! < in: whether tuple copy data of rec */
+
 /*******************************************************************//**
 Converts an index record to a typed data tuple. NOTE that externally
 stored (often big) fields are NOT copied to heap.

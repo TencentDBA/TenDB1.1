@@ -144,6 +144,8 @@ static char*	innobase_log_group_home_dir		= NULL;
 static char*	innobase_file_format_name		= NULL;
 static char*	innobase_change_buffering		= NULL;
 
+static char*	innobase_default_row_format		= NULL;
+
 /* The highest file format being used in the database. The value can be
 set by user, however, it will be adjusted to the newer file format if
 a table of such format is created/opened. */
@@ -376,6 +378,24 @@ innobase_file_format_name_lookup(
 /*=============================*/
 	const char*	format_name);		/*!< in: pointer to file format
 						name */
+
+static const char*	row_format_name_map[] = {
+    "GCS",
+    "Compact"
+};
+
+/************************************************************//**
+Validate the row format name and return 
+0: gcs
+1: compact
+ULINT_UNDEFINED: error
+*/
+static
+ulint
+innobase_row_format_name_lookup(
+/*=============================*/
+	const char*	row_format_name);	/*!< in: pointer to file format name */  
+
 /************************************************************//**
 Validate the file format check config parameters, as a side effect it
 sets the srv_max_file_format_at_startup variable.
@@ -1587,7 +1607,6 @@ Gets the InnoDB transaction handle for a MySQL handler object, creates
 an InnoDB transaction struct if the corresponding MySQL thread struct still
 lacks one.
 @return	InnoDB transaction handle */
-static inline
 trx_t*
 check_trx_exists(
 /*=============*/
@@ -2232,6 +2251,7 @@ innobase_init(
 	bool		ret;
 	char		*default_path;
 	uint		format_id;
+    ulint       row_format_id;
 
 	DBUG_ENTER("innobase_init");
         handlerton *innobase_hton= (handlerton *)p;
@@ -2404,6 +2424,19 @@ mem_free_and_error:
 		format_id = 0;
 	}
 
+    if (innobase_default_row_format != NULL){
+        row_format_id = innobase_row_format_name_lookup(innobase_default_row_format);
+
+        if (row_format_id == ULINT_UNDEFINED){
+            sql_print_error("InnoDB: wrong innodb_default_row_format.");
+
+            goto mem_free_and_error;
+        }
+    } else {
+        row_format_id = 0;
+    }
+    
+    srv_is_gcs_default = (row_format_id == 0 ? TRUE : FALSE);
 	srv_file_format = format_id;
 
 	/* Given the type of innobase_file_format_name we have little
@@ -2413,6 +2446,8 @@ mem_free_and_error:
 
 	innobase_file_format_name =
 		(char*) trx_sys_file_format_id_to_name(format_id);
+
+    innobase_default_row_format = (char*)row_format_name_map[row_format_id];
 
 	/* Check innobase_file_format_check variable */
 	if (!innobase_file_format_check) {
@@ -3130,6 +3165,12 @@ ha_innobase::get_row_type() const
 	if (prebuilt && prebuilt->table) {
 		const ulint	flags = prebuilt->table->flags;
 
+        /* check if GCS type*/      
+        if(dict_table_is_gcs(prebuilt->table)){
+            return (ROW_TYPE_GCS);
+        }
+
+
 		if (UNIV_UNLIKELY(!flags)) {
 			return(ROW_TYPE_REDUNDANT);
 		}
@@ -3155,6 +3196,45 @@ ha_innobase::get_row_type() const
 }
 
 
+
+/****************************************************************//**
+Get if the table had been fast altered from the data dictionary.
+@return 
+false  never fast altered OR not gcs row_format
+true   the table had been fast altered
+*/
+UNIV_INTERN
+bool
+ha_innobase::get_if_row_fast_altered()
+/*=============================*/
+{
+    if (prebuilt && prebuilt->table) {
+        /* check if GCS type*/      
+        return (dict_table_is_gcs_after_alter_table(prebuilt->table));
+    }
+    return(false);
+}
+
+
+UNIV_INTERN
+const char*
+ha_innobase::get_row_type_str_for_gcs() const
+/*=============================*/
+{
+    if (prebuilt && prebuilt->table) {
+
+		ut_ad(dict_table_is_gcs(prebuilt->table));
+        /* check if GCS type*/      
+        if(dict_table_is_gcs_after_alter_table(prebuilt->table)){
+            return "GCS";
+        }
+        else {
+            return "Gcs";
+        }
+    }
+    ut_ad(0);
+    return("Gcs");
+}
 
 /****************************************************************//**
 Get the table flags to use for the statement.
@@ -3286,21 +3366,11 @@ ha_innobase::primary_key_is_clustered()
 	return(true);
 }
 
-/** Always normalize table name to lower case on Windows */
-#ifdef __WIN__
-#define normalize_table_name(norm_name, name)		\
-	normalize_table_name_low(norm_name, name, TRUE)
-#else
-#define normalize_table_name(norm_name, name)           \
-	normalize_table_name_low(norm_name, name, FALSE)
-#endif /* __WIN__ */
-
 /*****************************************************************//**
 Normalizes a table name string. A normalized name consists of the
 database name catenated to '/' and table name. An example:
 test/mytable. On Windows normalization puts both the database name and the
 table name always to lower case if "set_lower_case" is set to TRUE. */
-static
 void
 normalize_table_name_low(
 /*=====================*/
@@ -4479,7 +4549,7 @@ ha_innobase::store_key_val_for_row(
 	Field*		field;
 	ibool		is_null;
 
-	DBUG_ENTER("store_key_val_for_row");
+	DBUG_ENTER("ha_innobase::store_key_val_for_row");
 
 	/* The format for storing a key field in MySQL is the following:
 
@@ -5700,7 +5770,7 @@ ha_innobase::index_init(
 	uint	keynr,	/*!< in: key (index) number */
 	bool sorted)	/*!< in: 1 if result MUST be sorted according to index */
 {
-	DBUG_ENTER("index_init");
+	DBUG_ENTER("ha_innobase::index_init");
 
 	DBUG_RETURN(change_active_index(keynr));
 }
@@ -5714,7 +5784,7 @@ ha_innobase::index_end(void)
 /*========================*/
 {
 	int	error	= 0;
-	DBUG_ENTER("index_end");
+	DBUG_ENTER("ha_innobase::index_end");
 	active_index=MAX_KEY;
 	DBUG_RETURN(error);
 }
@@ -5852,7 +5922,7 @@ ha_innobase::index_read(
 	int		error;
 	ulint		ret;
 
-	DBUG_ENTER("index_read");
+	DBUG_ENTER("ha_innobase::index_read");
 
 	ut_a(prebuilt->trx == thd_to_trx(user_thd));
 	ut_ad(key_len != 0 || find_flag != HA_READ_KEY_EXACT);
@@ -5981,7 +6051,7 @@ ha_innobase::innobase_get_index(
 	KEY*		key = 0;
 	dict_index_t*	index = 0;
 
-	DBUG_ENTER("innobase_get_index");
+	DBUG_ENTER("ha_innobase::innobase_get_index");
 
 	if (keynr != MAX_KEY && table->s->keys > 0) {
 		key = table->key_info + keynr;
@@ -6033,7 +6103,7 @@ ha_innobase::change_active_index(
 			index, even if it was internally generated by
 			InnoDB */
 {
-	DBUG_ENTER("change_active_index");
+	DBUG_ENTER("ha_innobase::change_active_index");
 
 	ut_ad(user_thd == ha_thd());
 	ut_a(prebuilt->trx == thd_to_trx(user_thd));
@@ -6146,7 +6216,7 @@ ha_innobase::general_fetch(
 	ulint		ret;
 	int		error	= 0;
 
-	DBUG_ENTER("general_fetch");
+	DBUG_ENTER("ha_innobase::general_fetch");
 
 	ut_a(prebuilt->trx == thd_to_trx(user_thd));
 
@@ -6239,7 +6309,7 @@ ha_innobase::index_first(
 {
 	int	error;
 
-	DBUG_ENTER("index_first");
+	DBUG_ENTER("ha_innobase::index_first");
 	ha_statistic_increment(&SSV::ha_read_first_count);
 
 	error = index_read(buf, NULL, 0, HA_READ_AFTER_KEY);
@@ -6265,7 +6335,7 @@ ha_innobase::index_last(
 {
 	int	error;
 
-	DBUG_ENTER("index_last");
+	DBUG_ENTER("ha_innobase::index_last");
 	ha_statistic_increment(&SSV::ha_read_last_count);
 
 	error = index_read(buf, NULL, 0, HA_READ_BEFORE_KEY);
@@ -6335,7 +6405,7 @@ ha_innobase::rnd_next(
 {
 	int	error;
 
-	DBUG_ENTER("rnd_next");
+	DBUG_ENTER("ha_innobase::rnd_next");
 	ha_statistic_increment(&SSV::ha_read_rnd_next_count);
 
 	if (start_of_scan) {
@@ -6368,7 +6438,7 @@ ha_innobase::rnd_pos(
 {
 	int		error;
 	uint		keynr	= active_index;
-	DBUG_ENTER("rnd_pos");
+	DBUG_ENTER("ha_innobase::rnd_pos");
 	DBUG_DUMP("key", pos, ref_length);
 
 	ha_statistic_increment(&SSV::ha_read_rnd_count);
@@ -6470,7 +6540,9 @@ create_table_def(
 					an .ibd file for it (no .ibd extension
 					in the path, though); otherwise this
 					is NULL */
-	ulint		flags)		/*!< in: table flags */
+	ulint		flags,		/*!< in: table flags */
+    ibool       is_gcs,
+    ibool       is_gcs_real_format) /*!< in: if the table's row_format had beed altered(for gcs special!) */
 {
 	Field*		field;
 	dict_table_t*	table;
@@ -6484,6 +6556,7 @@ create_table_def(
 	ulint		long_true_varchar;
 	ulint		charset_no;
 	ulint		i;
+    ulint       n_cols_before_alter = 0;
 
 	DBUG_ENTER("create_table_def");
 	DBUG_PRINT("enter", ("table_name: %s", table_name));
@@ -6503,10 +6576,14 @@ create_table_def(
 
 	n_cols = form->s->fields;
 
+    /* if top level asked to create the new table use REAL_GCS_FORMAT,use it */
+    if(is_gcs_real_format)
+        n_cols_before_alter = n_cols;
+
 	/* We pass 0 as the space id, and determine at a lower level the space
 	id where to store the table */
 
-	table = dict_mem_table_create(table_name, 0, n_cols, flags);
+	table = dict_mem_table_create(table_name, 0, n_cols, flags, is_gcs, n_cols_before_alter);     
 
 	if (path_of_temp_table) {
 		table->dir_path_of_temp_table =
@@ -6804,6 +6881,8 @@ get_row_format_name(
 		return("DEFAULT");
 	case ROW_TYPE_FIXED:
 		return("FIXED");
+    case ROW_TYPE_GCS:
+        return("GCS");
 	case ROW_TYPE_PAGE:
 	case ROW_TYPE_NOT_USED:
 		break;
@@ -6917,6 +6996,7 @@ create_options_are_valid(
 		/* fall through since dynamic also shuns KBS */
 	case ROW_TYPE_COMPACT:
 	case ROW_TYPE_REDUNDANT:
+    case ROW_TYPE_GCS:  /* GCS type check . do nothing */
 		if (kbs_specified) {
 			push_warning_printf(
 				thd, MYSQL_ERROR::WARN_LEVEL_WARN,
@@ -6988,6 +7068,8 @@ ha_innobase::create(
 	const char*	stmt;
 	size_t		stmt_len;
 	enum row_type	row_format;
+    ibool       is_gcs = FALSE;
+    ibool       is_gcs_real_format = FALSE;
 
 	DBUG_ENTER("ha_innobase::create");
 
@@ -7088,6 +7170,29 @@ ha_innobase::create(
 	}
 
 	row_format = form->s->row_type;
+   
+    /* 
+        如果修改表需要创建新的InnoDB子分区,新的子分区的行格式需要继承老分区.
+        如:在创建分区表没有指定ROW_FORMAT,且修改InnoDB的默认行格式时,会出现分区行格式不一致的问题.
+
+        并且要求表必须打开,如alter table par_table engine = innodb. 整个表重建,此时表仍未open,无法获得子表row_format信息.
+        对于这种情况,不需继承老分区行格式.
+    */
+    if( row_format == ROW_TYPE_DEFAULT && form->part_info 
+        && (create_info->other_options &HA_ALTER_PARTITION_TABLE) && form->file->get_if_opened() ){
+
+        row_format = form->file->get_row_type();
+        ut_ad(row_format != ROW_TYPE_NOT_USED);
+
+        if(row_format == ROW_TYPE_NOT_USED)
+        {
+            row_format = form->s->row_type;
+            ut_print_timestamp(stderr);
+            fprintf(stderr, "  [InnoDB create]  invalid partition table row_format, query: %s; db_name:%s; table_name: %s \n", 
+                ha_query(), table->s->db.str, form->alias );
+        }
+
+    }
 
 	if (flags) {
 		/* if ROW_FORMAT is set to default,
@@ -7159,11 +7264,41 @@ ha_innobase::create(
 		push_warning(
 			thd, MYSQL_ERROR::WARN_LEVEL_WARN,
 			ER_ILLEGAL_HA_CREATE_OPTION,
-			"InnoDB: assuming ROW_FORMAT=COMPACT.");
+			"InnoDB: assuming ROW_FORMAT=GCS.");
 	case ROW_TYPE_DEFAULT:
+        if (!(create_info->options & HA_LEX_CREATE_TMP_TABLE))  
+        {
+            /* 指定GCS为默认格式时，默认为GCS表 */
+            if (srv_is_gcs_default)
+            {
+                is_gcs = TRUE;                              /* 非临时表,分区表,设置为 gcs row_format,否则设置为compact  */
+            }
+        }
 	case ROW_TYPE_COMPACT:
 		flags = DICT_TF_COMPACT;
 		break;
+
+    case ROW_TYPE_GCS:   
+        /* for GCS row_format */
+
+        if ((create_info->options & HA_LEX_CREATE_TMP_TABLE) )
+        {
+            /* error: cannot create a table of gcs row_format for tmp_table or partition_table */
+            /*push_warning(
+                thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+                ER_ILLEGAL_HA_CREATE_OPTION,
+                "InnoDB: assuming ROW_FORMAT=COMPACT. Cannot create a GCS table for tmp table or partition table."); 
+            */
+            my_error(ER_CANT_CREATE_TABLE,MYF(0),create_info->alias,ER_CANT_CREATE_TABLE);
+            
+            DBUG_RETURN(-1);
+        }else{
+            /* set row_format as gcs */
+            is_gcs = TRUE;
+        }
+        flags = DICT_TF_COMPACT;
+        break;
+
 	}
 
 	/* Look for a primary key */
@@ -7192,6 +7327,15 @@ ha_innobase::create(
 		flags |= DICT_TF2_TEMPORARY << DICT_TF2_SHIFT;
 	}
 
+    /*     
+    1.if innodb_create_use_gcs_real_format is TRUE and the table to create is GCS,create as REAL GCS FORMAT
+    2.if HA_CREATE_USE_REAL_GCS_FORMAT flag is set int create_info->other_options,create as REAL GCS FORMAT
+    */
+    if ((srv_create_use_gcs_real_format && is_gcs)||
+        (create_info->other_options & HA_CREATE_USE_REAL_GCS_FORMAT)){
+        is_gcs_real_format = TRUE;
+    }
+
 	/* Get the transaction associated with the current thd, or create one
 	if not yet created */
 
@@ -7212,7 +7356,7 @@ ha_innobase::create(
 
 	error = create_table_def(trx, form, norm_name,
 		create_info->options & HA_LEX_CREATE_TMP_TABLE ? name2 : NULL,
-		flags);
+		flags, is_gcs,is_gcs_real_format);
 
 	if (error) {
 		goto cleanup;
@@ -7718,7 +7862,7 @@ ha_innobase::records_in_range(
 	ulint		mode2;
 	mem_heap_t*	heap;
 
-	DBUG_ENTER("records_in_range");
+	DBUG_ENTER("ha_innobase::records_in_range");
 
 	ut_a(prebuilt->trx == thd_to_trx(ha_thd()));
 
@@ -7832,7 +7976,7 @@ ha_innobase::estimate_rows_upper_bound(void)
 	ulonglong	local_data_file_length;
 	ulint		stat_n_leaf_pages;
 
-	DBUG_ENTER("estimate_rows_upper_bound");
+	DBUG_ENTER("ha_innobase::estimate_rows_upper_bound");
 
 	/* We do not know if MySQL can call this function before calling
 	external_lock(). To be safe, update the thd of the current table
@@ -8082,7 +8226,7 @@ ha_innobase::info_low(
 	char		path[FN_REFLEN];
 	os_file_stat_t	stat_info;
 
-	DBUG_ENTER("info");
+	DBUG_ENTER("ha_innobase::info");
 
 	/* If we are forcing recovery at a high level, we will suppress
 	statistics calculation on tables, because that may crash the
@@ -10816,11 +10960,21 @@ ha_innobase::check_if_incompatible_data(
 
 		return COMPATIBLE_DATA_NO;
 	}
+	
+	enum row_type tb_row_type = get_row_type();
 
-	/* Check that row format didn't change */
-	if ((info->used_fields & HA_CREATE_USED_ROW_FORMAT)
+	/*
+	Check that row format didn't change 
+	if the row_format is gcs/compact and the statement is just alter row_format,fast inplace it
+	*/
+	if(info->used_fields == HA_CREATE_USED_ROW_FORMAT ){
+	  if(is_support_fast_rowformat_change(info->row_type,tb_row_type) == INNODB_ROW_FORMAT_CHANGE_NO){	 
+		return(COMPATIBLE_DATA_NO);
+	  }
+	}	
+	else if ((info->used_fields & HA_CREATE_USED_ROW_FORMAT)
 	    && info->row_type != ROW_TYPE_DEFAULT
-	    && info->row_type != get_row_type()) {
+	    && info->row_type != tb_row_type) {
 
 		return(COMPATIBLE_DATA_NO);
 	}
@@ -10874,6 +11028,31 @@ innobase_file_format_name_lookup(
 	}
 
 	return(DICT_TF_FORMAT_MAX + 1);
+}
+
+/************************************************************//**
+Validate the row format name and return 
+0: gcs
+1: compact
+-1: error
+*/
+static
+ulint
+innobase_row_format_name_lookup(
+/*=============================*/
+	const char*	row_format_name)	/*!< in: pointer to file format name */   
+{
+    uint format_id;
+
+    for (format_id = 0; format_id < sizeof(row_format_name_map) / sizeof(row_format_name_map[0]); ++format_id)
+    {
+        if (!innobase_strcasecmp(row_format_name, row_format_name_map[format_id]))
+        {
+            return format_id;
+        }
+    }
+
+    return ULINT_UNDEFINED;
 }
 
 /************************************************************//**
@@ -11082,6 +11261,129 @@ innodb_file_format_max_update(
 		fprintf(stderr,
 			" [Info] InnoDB: the file format in the system "
 			"tablespace is now set to %s.\n", *format_name_out);
+	}
+}
+
+/*************************************************************//**
+Check if valid argument to innodb_file_format_max. This function
+is registered as a callback with MySQL.
+@return	0 for valid file format */
+static
+int
+innodb_default_row_format_validate(
+/*============================*/
+	THD*				thd,	/*!< in: thread handle */
+	struct st_mysql_sys_var*	var,	/*!< in: pointer to system
+						variable */
+	void*				save,	/*!< out: immediate result
+						for update function */
+	struct st_mysql_value*		value)	/*!< in: incoming string */
+{
+	const char*	file_format_input;
+	char		buff[STRING_BUFFER_USUAL_SIZE];
+	int		len = sizeof(buff);
+	ulint	format_id;
+
+	ut_a(save != NULL);
+	ut_a(value != NULL);
+
+	file_format_input = value->val_str(value, buff, &len);
+
+	if (file_format_input != NULL) {
+
+        format_id = innobase_row_format_name_lookup(file_format_input);
+
+        if (format_id == ULINT_UNDEFINED)
+        {
+            push_warning_printf(thd,
+                MYSQL_ERROR::WARN_LEVEL_WARN,
+                ER_WRONG_ARGUMENTS,
+                "InnoDB: invalid innodb_default_row_format "
+                "value; must be 'compact' or 'gcs'");
+        }
+        else
+        {
+			/* Save a pointer to the name in the
+			'row_format_name_map' constant array. */
+			*static_cast<const char**>(save) = row_format_name_map[format_id];
+
+			return(0);
+        }
+        
+	}
+
+	*static_cast<const char**>(save) = NULL;
+	return(1);
+}
+
+static 
+void
+innodb_default_row_format_update(
+/*==========================*/
+	THD*				thd,		/*!< in: thread handle */
+	struct st_mysql_sys_var*	var,		/*!< in: pointer to
+							system variable */
+	void*				var_ptr,	/*!< out: where the
+							formal string goes */
+	const void*			save)		/*!< in: immediate result
+							from check function */
+{
+	const char*	    row_foramt_name_in;
+	const char**	row_format_name_out;
+	ulint		    format_id;
+
+	ut_a(save != NULL);
+	ut_a(var_ptr != NULL);
+
+	row_foramt_name_in = *static_cast<const char*const*>(save);
+
+	if (!row_foramt_name_in) {
+
+		return;
+	}
+
+	format_id = innobase_row_format_name_lookup(row_foramt_name_in);
+
+	if (format_id == ULINT_UNDEFINED) {
+		/* DEFAULT is "on", which is invalid at runtime. */
+		push_warning_printf(thd, MYSQL_ERROR::WARN_LEVEL_WARN,
+				    ER_WRONG_ARGUMENTS,
+				    "Ignoring SET innodb_default_row_format=%s",
+				    row_foramt_name_in);
+		return;
+	}
+
+    srv_is_gcs_default = (format_id == 0 ? TRUE : FALSE);
+
+	row_format_name_out = static_cast<const char**>(var_ptr);
+
+    *row_format_name_out = row_format_name_map[format_id];
+
+    /* write in the error log */
+    ut_print_timestamp(stderr);
+    fprintf(stderr,
+        " [Info] InnoDB: the default row format is now set to %s.\n", *row_format_name_out);
+}
+
+/****************************************************************//**
+Update the system variable innodb_create_use_gcs_real_format using the "saved"
+value. This function is registered as a callback with MySQL. */
+static
+void
+innodb_create_use_gcs_real_format_update(
+/*==============================*/
+	THD*				thd,		/*!< in: thread handle */
+	struct st_mysql_sys_var*	var,		/*!< in: pointer to
+							system variable */
+	void*				var_ptr,	/*!< out: where the
+							formal string goes */
+	const void*			save)		/*!< in: immediate result
+							from check function */
+{
+	if (*(my_bool*) save) {
+		srv_create_use_gcs_real_format = TRUE;
+	} else {
+		srv_create_use_gcs_real_format = FALSE;
 	}
 }
 
@@ -11345,11 +11647,22 @@ static MYSQL_SYSVAR_BOOL(file_per_table, srv_file_per_table,
   "Stores each InnoDB table to an .ibd file in the database dir.",
   NULL, NULL, FALSE);
 
+static MYSQL_SYSVAR_BOOL(create_use_gcs_real_format, srv_create_use_gcs_real_format,
+  PLUGIN_VAR_OPCMDARG,
+  "Create gcs table use gcs real format like altered table",
+  NULL, innodb_create_use_gcs_real_format_update, FALSE);
+
 static MYSQL_SYSVAR_STR(file_format, innobase_file_format_name,
   PLUGIN_VAR_RQCMDARG,
   "File format to use for new tables in .ibd files.",
   innodb_file_format_name_validate,
   innodb_file_format_name_update, "Antelope");
+
+static MYSQL_SYSVAR_STR(default_row_format, innobase_default_row_format,
+  PLUGIN_VAR_RQCMDARG,
+  "row format to use for new tables.",
+  innodb_default_row_format_validate,
+  innodb_default_row_format_update, "GCS");
 
 /* "innobase_file_format_check" decides whether we would continue
 booting the server if the file format stamped on the system
@@ -11644,8 +11957,10 @@ static struct st_mysql_sys_var* innobase_system_variables[]= {
   MYSQL_SYSVAR(checksums),
   MYSQL_SYSVAR(commit_concurrency),
   MYSQL_SYSVAR(concurrency_tickets),
+  MYSQL_SYSVAR(create_use_gcs_real_format),
   MYSQL_SYSVAR(data_file_path),
   MYSQL_SYSVAR(data_home_dir),
+  MYSQL_SYSVAR(default_row_format),
   MYSQL_SYSVAR(doublewrite),
   MYSQL_SYSVAR(fast_shutdown),
   MYSQL_SYSVAR(file_io_threads),

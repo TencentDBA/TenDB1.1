@@ -22,6 +22,15 @@
 */
 
 %{
+/* Add this to normal compile */
+#define yyparse         MYSQLparse
+#define yylex           MYSQLlex
+#define yyerror         MYSQLerror
+#define yylval          MYSQLlval
+#define yychar          MYSQLchar
+#define yydebug         MYSQLdebug
+#define yynerrs         MYSQLnerrs
+
 /* thd is passed as an argument to yyparse(), and subsequently to yylex().
 ** The type will be void*, so it must be  cast to (THD*) when used.
 ** Use the YYTHD macro for this.
@@ -879,6 +888,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b, ulong *yystacksize);
 %token  COMPACT_SYM
 %token  COMPLETION_SYM
 %token  COMPRESSED_SYM
+%token  GCS_SYM
 %token  CONCURRENT
 %token  CONDITION_SYM                 /* SQL-2003-R, SQL-2008-R */
 %token  CONNECTION_SYM
@@ -4335,6 +4345,9 @@ partitioning:
             {
               lex->alter_info.flags|= ALTER_PARTITION;
             }
+            
+            /* add partition flags for create info */
+            Lex->create_info.other_options |= HA_LEX_CREATE_WITH_PARTITION ;
           }
           partition
         ;
@@ -5261,6 +5274,7 @@ row_types:
         | COMPRESSED_SYM { $$= ROW_TYPE_COMPRESSED; }
         | REDUNDANT_SYM  { $$= ROW_TYPE_REDUNDANT; }
         | COMPACT_SYM    { $$= ROW_TYPE_COMPACT; }
+        | GCS_SYM    { $$= ROW_TYPE_GCS; }		/* add gcs row format*/
         ;
 
 merge_insert_types:
@@ -6521,6 +6535,9 @@ add_partition_rule:
             }
             lex->alter_info.flags|= ALTER_ADD_PARTITION;
             lex->no_write_to_binlog= $3;
+            
+             /* add partition flags for alter info */
+            Lex->create_info.other_options |= HA_LEX_CREATE_WITH_PARTITION ;
           }
           add_part_extra
           {}
@@ -6793,8 +6810,16 @@ opt_restrict:
 
 opt_place:
           /* empty */ {}
-        | AFTER_SYM ident { store_position_for_column($2.str); }
-        | FIRST_SYM  { store_position_for_column(first_keyword); }
+        | AFTER_SYM ident 
+          { 
+            store_position_for_column($2.str); 
+            Lex->alter_info.flags |= ALTER_COLUMN_ORDER;
+          }
+        | FIRST_SYM  
+          { 
+            store_position_for_column(first_keyword);
+            Lex->alter_info.flags |= ALTER_COLUMN_ORDER; 
+          }
         ;
 
 opt_to:
@@ -12496,6 +12521,7 @@ keyword_sp:
         | COMPACT_SYM              {}
         | COMPLETION_SYM           {}
         | COMPRESSED_SYM           {}
+        | GCS_SYM                  {}
         | CONCURRENT               {}
         | CONNECTION_SYM           {}
         | CONSISTENT_SYM           {}

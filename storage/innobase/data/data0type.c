@@ -62,6 +62,7 @@ dtype_get_at_most_n_mbchars(
 	ulint	mbmaxlen = DATA_MBMAXLEN(mbminmaxlen);
 
 	ut_a(data_len != UNIV_SQL_NULL);
+    ut_ad(data_len != UNIV_SQL_DEFAULT);
 	ut_ad(!mbmaxlen || !(prefix_len % mbmaxlen));
 
 	if (mbminlen != mbmaxlen) {

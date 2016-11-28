@@ -2225,6 +2225,29 @@ void close_temporary(TABLE *table, bool free_share, bool delete_table)
   DBUG_VOID_RETURN;
 }
 
+void close_temporary_for_inplace(TABLE *table, bool free_share, bool delete_table)
+{
+  //handlerton *table_type= table->s->db_type();
+  DBUG_ENTER("close_temporary");
+  DBUG_PRINT("tmptable", ("closing table: '%s'.'%s'",
+	table->s->db.str, table->s->table_name.str));
+
+  free_io_cache(table);
+  closefrm(table, 0);
+  if (delete_table)
+  {
+	mysql_file_delete(key_file_frm, table->s->path.str, MYF(0));
+	/* 从rm_temporary_table(NULL, table->s->path.str);简化得到,不执行存储引擎底层删表操作 */
+  }
+	
+  if (free_share)
+  {
+	free_table_share(table->s);
+	my_free(table);
+  }
+  DBUG_VOID_RETURN;
+}
+
 
 /*
   Used by ALTER TABLE when the table is a temporary one. It changes something
@@ -5917,7 +5940,8 @@ void close_tables_for_reopen(THD *thd, TABLE_LIST **tables,
 
 TABLE *open_table_uncached(THD *thd, const char *path, const char *db,
                            const char *table_name,
-                           bool add_to_temporary_tables_list)
+                           bool add_to_temporary_tables_list,
+                           bool open_in_engine)
 {
   TABLE *tmp_table;
   TABLE_SHARE *share;
@@ -5951,8 +5975,8 @@ TABLE *open_table_uncached(THD *thd, const char *path, const char *db,
 
   if (open_table_def(thd, share, 0) ||
       open_table_from_share(thd, share, table_name,
-                            (uint) (HA_OPEN_KEYFILE | HA_OPEN_RNDFILE |
-                                    HA_GET_INDEX),
+                            open_in_engine ? (uint) (HA_OPEN_KEYFILE | HA_OPEN_RNDFILE |
+                            HA_GET_INDEX) : 0,
                             READ_KEYINFO | COMPUTE_TYPES | EXTRA_RECORD,
                             ha_open_options,
                             tmp_table, FALSE))

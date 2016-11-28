@@ -230,6 +230,7 @@ static SYMBOL symbols[] = {
   { "FULL",		SYM(FULL)},
   { "FULLTEXT",		SYM(FULLTEXT_SYM)},
   { "FUNCTION",		SYM(FUNCTION_SYM)},
+  { "GCS",          SYM(GCS_SYM)},      /* add for gcs row_format */
   { "GENERAL",          SYM(GENERAL)},
   { "GEOMETRY",		SYM(GEOMETRY_SYM)},
   { "GEOMETRYCOLLECTION",SYM(GEOMETRYCOLLECTION)},
