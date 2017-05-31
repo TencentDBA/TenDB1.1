@@ -71,3 +71,4 @@ To submit your test case, put your .test file and .result file(s) into
 a tar.gz archive, add a README that explains the problem, ftp the 
 archive to ftp://support.mysql.com/pub/mysql/secret/ and send a mail
 to bugs@lists.mysql.com
+

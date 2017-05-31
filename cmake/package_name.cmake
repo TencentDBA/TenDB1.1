@@ -134,3 +134,4 @@ IF(NOT VERSION)
   STRING(TOLOWER ${package_name} package_name)
   SET(${Var} ${package_name})
 ENDMACRO()
+
